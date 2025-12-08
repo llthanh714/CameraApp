@@ -1,37 +1,33 @@
 ﻿<div class="d-flex flex-column h-100 p-3">
     <div class="navbar-brand d-flex align-items-center mb-4 px-2">
         <span class="fs-4 fw-bold" style="background: var(--primary-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
-            Gemini Cam
+            HIS Ultrasound
         </span>
     </div>
 
     <div class="nav flex-column nav-pills gap-2">
         <div class="nav-item">
-            <NavLink class="nav-link d-flex align-items-center gap-3" href="" Match="NavLinkMatch.All">
-                <i class="bi bi-house-door"></i> Trang chủ
+            <NavLink class="nav-link d-flex align-items-center gap-3" href="worklist" Match="NavLinkMatch.All">
+                <i class="bi bi-list-task"></i> Danh sách chờ (Worklist)
             </NavLink>
         </div>
         <div class="nav-item">
             <NavLink class="nav-link d-flex align-items-center gap-3" href="camera">
-                <i class="bi bi-camera-video"></i> Studio Quay
-            </NavLink>
-        </div>
-        <div class="nav-item">
-            <NavLink class="nav-link d-flex align-items-center gap-3" href="settings">
-                <i class="bi bi-gear"></i> Cài đặt
+                <i class="bi bi-camera-video"></i> Studio Tự do
             </NavLink>
         </div>
     </div>
 
     <div class="mt-auto px-2 pb-2">
-        <div class="text-muted small">© 2024 Gemini Style</div>
+        <div class="text-muted small">© 2024 Medical Imaging</div>
     </div>
 </div>
 
 <style>
+    /* Giữ nguyên style cũ */
     .nav-link {
         color: var(--text-secondary);
-        border-radius: var(--radius-md);
+        border-radius: 16px;
         padding: 12px 16px;
         transition: all 0.2s;
     }
@@ -43,7 +39,7 @@
 
         .nav-link.active {
             background-color: rgba(66, 133, 244, 0.15);
-            color: var(--accent-blue);
+            color: #8ab4f8;
             font-weight: 600;
         }
 

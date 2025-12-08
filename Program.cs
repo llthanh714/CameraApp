@@ -1,4 +1,5 @@
 ﻿using CameraApp.Components;
+using CameraApp.Services;
 using Xabe.FFmpeg.Downloader;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -13,6 +14,9 @@ builder.Services.AddRazorComponents()
         // Tăng giới hạn lên 100MB (tùy nhu cầu của bạn)
         options.MaximumReceiveMessageSize = 100 * 1024 * 1024;
     });
+
+// Đăng ký HIS Service
+builder.Services.AddSingleton<HisService>();
 
 string ffmpegPath = Path.Combine(Directory.GetCurrentDirectory(), "ffmpeg");
 if (!Directory.Exists(ffmpegPath))

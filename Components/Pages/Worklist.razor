@@ -1,0 +1,134 @@
+﻿@page "/"
+@page "/worklist"
+@rendermode InteractiveServer
+@using CameraApp.Services
+@inject HisService HisService
+@inject NavigationManager NavManager
+
+<PageTitle>Danh sách chờ Siêu âm</PageTitle>
+
+<div class="container-fluid p-4 fade-in h-100 d-flex flex-column">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h3 class="fw-bold mb-0">Danh sách chờ</h3>
+            <small class="text-muted">Phòng Siêu âm 01 - Kết nối HIS: <span class="text-success">Online</span></small>
+        </div>
+        <div class="d-flex gap-3 align-items-center">
+            <!-- Search Box -->
+            <div class="control-pill" style="width: 320px;">
+                <i class="bi bi-search"></i>
+                <input type="text" placeholder="Tìm tên hoặc mã BN..." class="border-0 bg-transparent w-100 text-primary" style="outline: none;" @bind="searchTerm" @bind:event="oninput" />
+            </div>
+
+            <!-- Nút Refresh: Đã kiểm tra kỹ, có icon bên trong -->
+            <button class="btn-circle-modern" title="Làm mới dữ liệu" @onclick="LoadData">
+                <i class="bi bi-arrow-clockwise"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Table List (Giữ nguyên) -->
+    <div class="flex-grow-1 overflow-auto rounded-box bg-surface shadow-sm">
+        <table class="table table-hover mb-0" style="color: var(--text-primary); vertical-align: middle;">
+            <thead class="sticky-top" style="background-color: var(--bg-surface-hover); border-bottom: 2px solid var(--border-color);">
+                <tr>
+                    <th class="py-3 ps-4" style="width: 150px;">Trạng thái</th>
+                    <th class="py-3">Mã BN</th>
+                    <th class="py-3">Họ và Tên</th>
+                    <th class="py-3">Giới tính/Tuổi</th>
+                    <th class="py-3">Chỉ định</th>
+                    <th class="py-3">Thời gian chờ</th>
+                    <th class="py-3 text-end pe-4">Thao tác</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (filteredPatients == null)
+                {
+                    <tr>
+                        <td colspan="7" class="text-center py-5">
+                            <div class="spinner-border text-primary" role="status"></div>
+                            <div class="mt-2 text-muted">Đang tải dữ liệu...</div>
+                        </td>
+                    </tr>
+                }
+                else if (!filteredPatients.Any())
+                {
+                    <tr>
+                        <td colspan="7" class="text-center py-5 text-muted">
+                            <i class="bi bi-inbox fs-1 d-block mb-2 opacity-50"></i>
+                            Không tìm thấy bệnh nhân nào.
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    @foreach (var p in filteredPatients)
+                    {
+                        <tr style="cursor: pointer; transition: background 0.1s;" @onclick="() => OpenExam(p)">
+                            <td class="ps-4">
+                                @if (p.Status == "Examining")
+                                {
+                                    <span class="badge bg-primary bg-opacity-10 text-primary px-3 py-2 rounded-pill">Đang khám</span>
+                                }
+                                else if (p.Status == "Done")
+                                {
+                                    <span class="badge bg-success bg-opacity-10 text-success px-3 py-2 rounded-pill">Hoàn thành</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-secondary bg-opacity-10 text-secondary px-3 py-2 rounded-pill">Đang chờ</span>
+                                }
+                            </td>
+                            <td class="fw-bold text-muted font-monospace">@p.Code</td>
+                            <td class="fw-bold fs-5">@p.Name</td>
+                            <td>@p.Gender <span class="text-muted mx-1">/</span> @p.Age</td>
+                            <td>@p.ServiceName</td>
+                            <td>
+                                <div class="d-flex align-items-center gap-2">
+                                    <i class="bi bi-clock-history text-muted"></i>
+                                    <span>@p.CheckInTime.ToString("HH:mm")</span>
+                                </div>
+                            </td>
+                            <td class="text-end pe-4">
+                                <button class="btn btn-sm btn-gemini rounded-pill px-4 py-2" @onclick:stopPropagation="true" @onclick="() => OpenExam(p)">
+                                    <i class="bi bi-camera-video me-2"></i> Siêu âm
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    private List<Patient> patients = new();
+    private string searchTerm = "";
+
+    private IEnumerable<Patient> filteredPatients =>
+        string.IsNullOrWhiteSpace(searchTerm)
+            ? patients
+            : patients.Where(p =>
+                p.Name.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                p.Code.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        patients = null;
+        StateHasChanged();
+        await Task.Delay(300);
+        patients = await HisService.GetWorklistAsync();
+    }
+
+    private void OpenExam(Patient patient)
+    {
+        NavManager.NavigateTo($"/camera?patientId={patient.Id}&patientName={Uri.EscapeDataString(patient.Name)}&patientCode={patient.Code}");
+    }
+}

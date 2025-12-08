@@ -1,13 +1,17 @@
-﻿:root {
+﻿/* ... Giữ nguyên phần biến root ... */
+
+:root {
     /* Light Mode Variables */
     --bg-body: #f0f4f9;
     --bg-surface: #ffffff;
-    --bg-surface-hover: #f2f2f2;
+    --bg-surface-hover: #f8f9fa;
     --text-primary: #1f1f1f;
     --text-secondary: #5e5e5e;
     --border-color: #e0e3e7;
     --primary-gradient: linear-gradient(135deg, #1967d2, #8ab4f8);
     --shadow-sm: 0 1px 2px 0 rgba(60,64,67,0.3), 0 1px 3px 1px rgba(60,64,67,0.15);
+    --shadow-btn: 0 2px 6px rgba(0, 0, 0, 0.1);
+    --shadow-btn-hover: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 [data-theme="dark"] {
@@ -20,6 +24,8 @@
     --border-color: #444746;
     --primary-gradient: linear-gradient(135deg, #4285f4, #d96570);
     --shadow-sm: 0 1px 3px 0 rgba(0,0,0,0.4);
+    --shadow-btn: 0 4px 8px rgba(0, 0, 0, 0.4);
+    --shadow-btn-hover: 0 6px 12px rgba(0, 0, 0, 0.6);
 }
 
 body {
@@ -35,29 +41,28 @@ body {
     overflow: hidden;
 }
 
-/* Rounded Box: Fix cứng bo góc và overflow */
 .rounded-box {
-    border-radius: 24px !important; /* Bo góc mạnh hơn (24px) */
-    overflow: hidden !important; /* Cắt bỏ mọi thứ thừa ra ngoài */
+    border-radius: 24px !important;
+    overflow: hidden !important;
     border: 1px solid var(--border-color);
 }
 
-/* Control Pill */
+/* Control Pill (Ô nhập liệu/Select) */
 .control-pill {
     background-color: var(--bg-surface);
     border: 1px solid var(--border-color);
     border-radius: 50px;
-    padding: 0.5rem 1rem;
+    padding: 0 1rem; /* Bỏ padding top/bottom để flex center tự lo */
     display: flex;
     align-items: center;
     transition: all 0.2s;
-    height: 50px;
+    height: 50px; /* Chiều cao cố định */
+    box-shadow: var(--shadow-sm);
 }
 
     .control-pill:hover, .control-pill:focus-within {
         border-color: #8ab4f8;
-        background-color: var(--bg-surface-hover);
-        box-shadow: var(--shadow-sm);
+        box-shadow: var(--shadow-btn-hover);
     }
 
     .control-pill i {
@@ -66,31 +71,53 @@ body {
         margin-right: 10px;
     }
 
-    .control-pill select {
+    .control-pill select, .control-pill input {
         border: none;
         background: transparent;
         color: var(--text-primary);
         width: 100%;
+        height: 100%; /* Full chiều cao cha */
         outline: none;
-        cursor: pointer;
         font-size: 0.95rem;
-        -webkit-appearance: none;
     }
 
-    .control-pill select {
-        background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23a8a8a8%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
-        background-repeat: no-repeat;
-        background-position: right 0 center;
-        background-size: 0.65em auto;
-        padding-right: 1.5em;
+/* === MODERN CIRCLE BUTTONS (Cập nhật) === */
+.btn-circle-modern {
+    width: 50px; /* Bằng chiều cao control-pill */
+    height: 50px;
+    border-radius: 50%;
+    border: 1px solid var(--border-color);
+    background: var(--bg-surface);
+    /* Màu icon mặc định là secondary để rõ ràng trên nền trắng */
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: var(--shadow-sm);
+    cursor: pointer;
+    flex-shrink: 0; /* Không bị co lại khi màn hình nhỏ */
+}
+
+    .btn-circle-modern:hover {
+        background-color: var(--bg-surface-hover);
+        border-color: #8ab4f8; /* Viền xanh khi hover */
+        color: #1967d2; /* Icon xanh khi hover */
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-btn-hover);
     }
 
-        .control-pill select option {
-            background-color: var(--bg-surface);
-            color: var(--text-primary);
-        }
+    .btn-circle-modern:active {
+        transform: scale(0.95);
+        background-color: var(--border-color);
+    }
 
-/* Buttons */
+    .btn-circle-modern i {
+        font-size: 1.4rem; /* Kích thước icon chuẩn */
+        line-height: 1;
+    }
+
+/* Button Gemini */
 .btn-gemini {
     background: var(--primary-gradient);
     color: white;
@@ -104,32 +131,22 @@ body {
     justify-content: center;
     gap: 8px;
     transition: transform 0.2s, box-shadow 0.2s;
+    box-shadow: var(--shadow-btn);
 }
 
     .btn-gemini:hover {
         transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(66, 133, 244, 0.3);
+        box-shadow: 0 4px 15px rgba(66, 133, 244, 0.4);
+        opacity: 0.95;
     }
 
-.btn-icon {
-    width: 45px;
-    height: 45px;
-    border-radius: 50%;
-    border: 1px solid var(--border-color);
-    background: var(--bg-surface);
-    color: var(--text-primary);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s;
+/* Table overrides */
+.table {
+    --bs-table-bg: transparent;
+    --bs-table-color: var(--text-primary);
+    --bs-table-hover-bg: rgba(66, 133, 244, 0.1);
 }
 
-    .btn-icon:hover {
-        background-color: var(--bg-surface-hover);
-        transform: rotate(15deg);
-    }
-
-/* Custom Scrollbar */
 ::-webkit-scrollbar {
     width: 6px;
 }
@@ -141,6 +158,114 @@ body {
 ::-webkit-scrollbar-thumb {
     background: var(--border-color);
     border-radius: 10px;
+}
+
+/* Camera Controls (Giữ nguyên) */
+.camera-dock {
+    background: rgba(20, 20, 20, 0.75);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 50px;
+    padding: 8px 16px;
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.btn-shutter {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background-color: transparent;
+    border: 3px solid rgba(255, 255, 255, 0.8);
+    padding: 3px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-shutter-inner {
+    width: 100%;
+    height: 100%;
+    background-color: #ffffff;
+    border-radius: 50%;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: inset 0 0 5px rgba(0,0,0,0.1);
+}
+
+.btn-shutter:hover {
+    transform: scale(1.05);
+    border-color: #fff;
+}
+
+.btn-shutter:active .btn-shutter-inner {
+    transform: scale(0.9);
+    background-color: #e0e0e0;
+}
+
+.btn-record {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background-color: transparent;
+    border: 3px solid rgba(255, 77, 77, 0.6);
+    padding: 3px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-record-inner {
+    width: 100%;
+    height: 100%;
+    background-color: #ff4d4d;
+    border-radius: 50%;
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.btn-record:hover {
+    transform: scale(1.05);
+    border-color: #ff4d4d;
+}
+
+.btn-record.recording {
+    border-color: rgba(255, 77, 77, 0.2);
+}
+
+    .btn-record.recording .btn-record-inner {
+        width: 45%;
+        height: 45%;
+        border-radius: 6px;
+    }
+
+.pulse-ring {
+    animation: pulse-ring 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+}
+
+@keyframes pulse-ring {
+    0% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(255, 77, 77, 0.7);
+    }
+
+    70% {
+        transform: scale(1);
+        box-shadow: 0 0 0 15px rgba(255, 77, 77, 0);
+    }
+
+    100% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(255, 77, 77, 0);
+    }
 }
 
 .fade-in {
