@@ -1,0 +1,212 @@
+﻿@page "/"
+@rendermode InteractiveServer
+@inject IJSRuntime JS
+@using System.IO
+@using Xabe.FFmpeg
+
+<h3>Camera Full Features (Ảnh & Video MP4)</h3>
+
+<div class="row">
+    <div class="col-md-8">
+        <video id="webcamFeed" autoplay playsinline muted style="width: 100%; background: #000; border-radius: 8px;"></video>
+    </div>
+    <div class="col-md-4">
+        <div class="d-grid gap-2">
+            <button class="btn btn-primary" @onclick="StartCamera" disabled="@isCameraReady">
+                1. Bật Camera
+            </button>
+
+            <button class="btn btn-success" @onclick="CapturePhoto" disabled="@(!isCameraReady || isRecording || isProcessing)">
+                📷 Chụp Ảnh
+            </button>
+
+            @if (!isRecording)
+            {
+                <button class="btn btn-danger" @onclick="StartRecording" disabled="@(!isCameraReady || isProcessing)">
+                    ◉ Bắt đầu quay Video
+                </button>
+            }
+            else
+            {
+                <button class="btn btn-warning" @onclick="StopRecordingAndConvert">
+                    ■ Dừng quay & Xử lý
+                </button>
+                <div class="alert alert-info mt-2">
+                    Đang ghi hình... <br />
+                    <small>File tạm: @currentWebmFileName</small>
+                </div>
+            }
+
+            @if (isProcessing)
+            {
+                <div class="alert alert-warning mt-2">
+                    ⏳ Đang chuyển đổi sang MP4. Vui lòng chờ...
+                </div>
+            }
+        </div>
+        <p class="mt-3 text-muted" style="white-space: pre-line">@statusMessage</p>
+    </div>
+</div>
+
+@code {
+    private IJSObjectReference? module;
+    private bool isCameraReady = false;
+    private bool isRecording = false;
+    private bool isProcessing = false; // Trạng thái đang convert video
+    private string statusMessage = "";
+    private string currentWebmFileName = "";
+
+    // Đường dẫn thư mục uploads
+    private string uploadPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            module = await JS.InvokeAsync<IJSObjectReference>("import", "./camera.js");
+            if (!Directory.Exists(uploadPath)) Directory.CreateDirectory(uploadPath);
+        }
+    }
+
+    private async Task StartCamera()
+    {
+        if (module is not null)
+        {
+            await module.InvokeVoidAsync("startCamera", "webcamFeed");
+            isCameraReady = true;
+            statusMessage = "Camera đã sẵn sàng.";
+        }
+    }
+
+    // --- XỬ LÝ CHỤP ẢNH ---
+    private async Task CapturePhoto()
+    {
+        if (module is not null)
+        {
+            try
+            {
+                // 1. Nhận chuỗi Base64 từ JS
+                var base64Str = await module.InvokeAsync<string>("captureImage", "webcamFeed");
+
+                // 2. Tách phần header "data:image/jpeg;base64," ra để lấy dữ liệu thô
+                var base64Data = base64Str.Split(',')[1];
+                var bytes = Convert.FromBase64String(base64Data);
+
+                // 3. Lưu file .jpg
+                var fileName = $"photo_{DateTime.Now:yyyyMMdd_HHmmss}.jpg";
+                await File.WriteAllBytesAsync(Path.Combine(uploadPath, fileName), bytes);
+
+                statusMessage = $"✅ Đã chụp ảnh: {fileName}";
+            }
+            catch (Exception ex)
+            {
+                statusMessage = $"❌ Lỗi chụp ảnh: {ex.Message}";
+            }
+        }
+    }
+
+    // --- XỬ LÝ QUAY VIDEO ---
+    private async Task StartRecording()
+    {
+        if (module is not null)
+        {
+            // Tạo tên file .webm tạm
+            currentWebmFileName = $"temp_video_{DateTime.Now:yyyyMMdd_HHmmss}.webm";
+            // Bắt đầu stream bên JS
+            await module.InvokeVoidAsync("startRecordingStream", currentWebmFileName);
+            isRecording = true;
+            statusMessage = "Đang quay...";
+        }
+    }
+
+    private async Task StopRecordingAndConvert()
+    {
+        if (module is not null)
+        {
+            // 1. Dừng quay bên JS
+            await module.InvokeVoidAsync("stopRecordingStream");
+            isRecording = false;
+            isProcessing = true; // Bật trạng thái đang xử lý
+            statusMessage = "Đang dừng quay và chuẩn bị chuyển đổi...";
+            StateHasChanged(); // Cập nhật UI ngay lập tức
+
+            // 2. Thực hiện chuyển đổi sang MP4 (Chạy nền)
+            // Lưu ý: Độ trễ nhỏ để đảm bảo chunk cuối cùng đã được API lưu xong.
+            await Task.Delay(1000);
+            await ConvertVideoToMp4(currentWebmFileName);
+
+            isProcessing = false;
+        }
+    }
+
+    private async Task ConvertVideoToMp4(string webmFileName)
+    {
+        statusMessage = "⏳ Đang kiểm tra file video...";
+        StateHasChanged();
+
+        string inputPath = Path.Combine(uploadPath, webmFileName);
+        string outputFileName = webmFileName.Replace(".webm", ".mp4");
+        string outputPath = Path.Combine(uploadPath, outputFileName);
+
+        // --- BƯỚC 1: Đợi file nhả ra hoàn toàn (Retry logic) ---
+        // Đôi khi ổ cứng lưu chậm, cần đợi thêm một chút
+        int retries = 0;
+        while (IsFileLocked(inputPath) && retries < 10)
+        {
+            await Task.Delay(500); // Đợi 0.5s mỗi lần check
+            retries++;
+        }
+
+        // --- BƯỚC 2: Kiểm tra dung lượng file ---
+        var fileInfo = new FileInfo(inputPath);
+        if (!fileInfo.Exists || fileInfo.Length == 0)
+        {
+            statusMessage = "❌ Lỗi: File video rỗng hoặc không tồn tại (0 bytes). Hãy thử quay lâu hơn.";
+            return;
+        }
+
+        statusMessage = "⏳ Đang chuyển đổi sang MP4...";
+        StateHasChanged();
+
+        try
+        {
+            // --- BƯỚC 3: Thực hiện Convert (Nhớ thêm await) ---
+            // Lấy thông tin file input
+            IMediaInfo mediaInfo = await FFmpeg.GetMediaInfo(inputPath);
+
+            // Tạo conversion
+            IConversion conversion = await FFmpeg.Conversions.FromSnippet.ToMp4(inputPath, outputPath);
+
+            // Bắt đầu chạy
+            await conversion.Start();
+
+            statusMessage = $"🎉 Thành công! File mới: {outputFileName}";
+
+            // Xóa file gốc (nếu muốn)
+            // if (File.Exists(inputPath)) File.Delete(inputPath);
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"❌ Lỗi FFmpeg: {ex.Message}";
+            Console.WriteLine(ex.ToString()); // Xem log chi tiết ở Console
+        }
+    }
+
+    // Hàm phụ trợ để kiểm tra file có đang bị khóa không
+    private bool IsFileLocked(string filePath)
+    {
+        try
+        {
+            using (FileStream stream = File.Open(filePath, FileMode.Open, FileAccess.Read, FileShare.None))
+            {
+                stream.Close();
+            }
+        }
+        catch (IOException)
+        {
+            // File đang bị khóa bởi tiến trình khác (ví dụ vẫn đang ghi)
+            return true;
+        }
+        return false;
+    }
+}
