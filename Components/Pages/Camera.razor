@@ -7,7 +7,7 @@
 
 <div class="container-fluid h-100 d-flex flex-column p-4 fade-in">
     <!-- Header Area -->
-    <div class="d-flex justify-content-between align-items-center mb-3">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-shrink-0">
         <div class="d-flex align-items-center gap-3">
             @if (!string.IsNullOrEmpty(_displayPatientName))
             {
@@ -37,26 +37,19 @@
         <div class="d-flex gap-3 align-items-center">
             <span class="text-muted small d-none d-md-block fw-medium">@DateTime.Now.ToString("dd/MM/yyyy HH:mm")</span>
             <button type="button" class="btn-circle-modern" @onclick="ToggleTheme" title="Chế độ Sáng/Tối">
-                @if (isDarkMode)
-                {
-                    <i class="bi bi-moon-stars-fill text-warning"></i>
-                }
-                else
-                {
-
-                    <i class="bi bi-sun-fill text-warning"></i>
-                }
+                @if (isDarkMode) { <i class="bi bi-moon-stars-fill text-warning"></i> }
+                else { <i class="bi bi-sun-fill text-warning"></i> }
             </button>
         </div>
     </div>
 
     <!-- Controls Bar -->
-    <div class="row g-3 mb-3">
+    <div class="row g-3 mb-3 flex-shrink-0">
         <div class="col-md-3">
             <div class="control-pill">
                 <i class="bi bi-webcam"></i>
                 <select @bind="SelectedDeviceId" @bind:after="SaveConfig">
-                    @if (videoDevices == null || !videoDevices.Any())
+                     @if (videoDevices == null || !videoDevices.Any())
                     {
                         <option>Đang tìm thiết bị...</option>
                     }
@@ -70,7 +63,7 @@
                 </select>
             </div>
         </div>
-
+        
         <div class="col-md-3">
             <div class="control-pill">
                 <i class="bi bi-aspect-ratio"></i>
@@ -109,11 +102,13 @@
         </div>
     </div>
 
-    <!-- Workspace Area (Giữ nguyên) -->
+    <!-- Workspace Area -->
     <div class="row flex-grow-1 g-3 overflow-hidden">
+        <!-- Video Feed -->
         <div class="col-lg-9 h-100">
             <div class="h-100 w-100 position-relative rounded-box border border-secondary border-opacity-25" style="background-color: #000;">
                 <video id="videoFeed" class="w-100 h-100 object-fit-contain" autoplay playsinline muted></video>
+                
                 @if (!isCameraRunning)
                 {
                     <div class="position-absolute top-50 start-50 translate-middle text-center text-muted opacity-50">
@@ -121,24 +116,34 @@
                         <p class="mt-2">Chưa kết nối tín hiệu</p>
                     </div>
                 }
+
                 @if (isCameraRunning)
                 {
+                    <!-- Camera Dock -->
                     <div class="position-absolute bottom-0 start-50 translate-middle-x mb-4">
                         <div class="camera-dock">
+                            
+                            <!-- Nút Chụp Ảnh (Icon Only) -->
                             <button class="btn-shutter" @onclick="CaptureFrame" title="Lưu ảnh (Phím cách)">
                                 <div class="btn-shutter-inner">
                                     <i class="bi bi-camera-fill text-dark fs-5"></i>
                                 </div>
                             </button>
+
+                            <!-- Vách ngăn -->
                             <div style="width: 1px; height: 32px; background: rgba(255,255,255,0.2);"></div>
+
+                            <!-- Nút Quay Phim (Icon Only) -->
                             <button class="btn-record @(isRecording ? "recording pulse-ring" : "")" @onclick="ToggleRecording" title="@(isRecording ? "Dừng ghi" : "Ghi hình ca khám")">
                                 <div class="btn-record-inner"></div>
                             </button>
+
                         </div>
                     </div>
+
                     @if (isRecording)
                     {
-                        <div class="position-absolute top-0 end-0 m-4 px-3 py-2 rounded-pill bg-danger text-white d-flex align-items-center gap-2 small fw-bold shadow" style="backdrop-filter: blur(4px);">
+                         <div class="position-absolute top-0 end-0 m-4 px-3 py-2 rounded-pill bg-danger text-white d-flex align-items-center gap-2 small fw-bold shadow" style="backdrop-filter: blur(4px);">
                             <div class="spinner-grow spinner-grow-sm" role="status"></div> REC
                         </div>
                     }
@@ -149,30 +154,25 @@
         <!-- Gallery Sidebar -->
         <div class="col-lg-3 h-100 d-flex flex-column">
             <div class="bg-surface rounded-box h-100 p-3 d-flex flex-column" style="background-color: var(--bg-surface);">
-                <div class="d-flex justify-content-between align-items-center mb-3 ps-1">
+                
+                <!-- 1. Header Sidebar: Thêm flex-shrink-0 -->
+                <div class="d-flex justify-content-between align-items-center mb-3 ps-1 flex-shrink-0">
                     <h6 class="fw-bold text-uppercase text-muted small mb-0">
-                        @if (!string.IsNullOrEmpty(_displayPatientName))
-                        {
-                            <span>Dữ liệu ca khám</span>
-                        }
-                        else
-                        {
-
-                            <span>Thư viện tạm</span>
-                        }
+                        @if(!string.IsNullOrEmpty(_displayPatientName)) { <span>Dữ liệu ca khám</span> } else { <span>Thư viện tạm</span> }
                     </h6>
                     <span class="badge bg-primary bg-opacity-10 text-primary rounded-pill">@capturedItems.Count</span>
                 </div>
-
-                <div class="flex-grow-1 overflow-auto pe-2 custom-scrollbar">
-                    @if (capturedItems.Count == 0)
+                
+                <!-- 2. Danh sách cuộn: Thêm min-height: 0 -->
+                <div class="flex-grow-1 overflow-auto pe-2 custom-scrollbar" style="min-height: 0;">
+                     @if (capturedItems.Count == 0)
                     {
                         <div class="h-100 d-flex flex-column justify-content-center align-items-center text-muted opacity-25">
                             <i class="bi bi-images display-4 mb-3"></i>
                             <span>Chưa có ảnh/video</span>
                         </div>
                     }
-                    else
+                    else 
                     {
                         <div class="d-flex flex-column gap-2">
                             @foreach (var item in Enumerable.Reverse(capturedItems))
@@ -189,7 +189,7 @@
                                             <video src="@item.Url" controls class="w-100 rounded-3 shadow-sm border border-light border-opacity-10"></video>
                                             <div class="position-absolute top-0 start-0 m-1 px-2 py-1 bg-danger bg-opacity-75 rounded-2 text-white" style="font-size: 0.65rem; font-weight: bold;">VID</div>
                                         }
-
+                                        
                                         <div class="position-absolute top-0 end-0 m-1">
                                             <a href="@item.Url" download="@item.Filename" class="btn btn-sm btn-dark rounded-circle bg-opacity-75 border-0 d-flex align-items-center justify-content-center" style="width: 28px; height: 28px;"><i class="bi bi-download" style="font-size: 0.8rem"></i></a>
                                         </div>
@@ -202,12 +202,15 @@
                         </div>
                     }
                 </div>
-
+                
+                <!-- 3. Footer Button: Thêm flex-shrink-0 để không bị co lại -->
                 @if (capturedItems.Count > 0 && !string.IsNullOrEmpty(_displayPatientName))
                 {
-                    <button class="btn btn-gemini w-100 mt-3" @onclick="FinishExam">
-                        <i class="bi bi-check-lg"></i> Kết thúc
-                    </button>
+                    <div class="mt-3 flex-shrink-0">
+                        <button class="btn btn-gemini w-100" @onclick="FinishExam">
+                            <i class="bi bi-check-lg"></i> Kết thúc
+                        </button>
+                    </div>
                 }
             </div>
         </div>
@@ -215,40 +218,11 @@
 </div>
 
 <style>
-    .animate-pulse {
-        animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-    }
-
-    .animate-item {
-        animation: slideIn 0.3s ease-out;
-    }
-
-    @@keyframes pulse {
-        0%, 100% {
-            opacity: 1;
-        }
-
-        50% {
-            opacity: 0.5;
-        }
-    }
-
-    @@keyframes slideIn {
-        from {
-            opacity: 0;
-            transform: translateY(10px);
-        }
-
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-
-    .object-fit-contain {
-        object-fit: contain;
-        background-color: black;
-    }
+    .animate-pulse { animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+    .animate-item { animation: slideIn 0.3s ease-out; }
+    @@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    @@keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .object-fit-contain { object-fit: contain; background-color: black; }
 </style>
 
 @code {
@@ -263,9 +237,8 @@
     private bool isCameraRunning = false;
     private bool isRecording = false;
     private bool isDarkMode = true;
-
-    public class MediaItem
-    {
+    
+    public class MediaItem {
         public string Type { get; set; } = "image";
         public string Url { get; set; } = "";
         public string Filename { get; set; } = "";
@@ -306,7 +279,7 @@
 
     private async Task CaptureFrame()
     {
-        if (module is not null)
+        if (module is not null) 
         {
             var base64 = await module.InvokeAsync<string>("takePicture", "videoFeed");
             capturedItems.Add(new MediaItem { Type = "image", Url = base64, Timestamp = DateTime.Now, Filename = $"IMG_{DateTime.Now:yyyyMMdd_HHmmss}.png" });
@@ -315,61 +288,51 @@
 
     private async Task ToggleRecording() { if (isRecording) await StopRecording(); else await StartRecording(); }
     private async Task StartRecording() { if (module is not null && await module.InvokeAsync<bool>("startRecording", "videoFeed")) isRecording = true; }
-    private async Task StopRecording()
+    private async Task StopRecording() 
     {
-        if (module is not null)
-        {
-            var url = await module.InvokeAsync<string>("stopRecording");
+        if (module is not null) 
+        { 
+            var url = await module.InvokeAsync<string>("stopRecording"); 
             isRecording = false;
             capturedItems.Add(new MediaItem { Type = "video", Url = url, Timestamp = DateTime.Now, Filename = $"VID_{DateTime.Now:yyyyMMdd_HHmmss}.webm" });
         }
     }
-
+    
     private async Task ToggleTheme() { isDarkMode = !isDarkMode; await ApplyTheme(); }
     private async Task ApplyTheme() { if (module is not null) await module.InvokeVoidAsync("setTheme", isDarkMode ? "dark" : "light"); }
-    private async Task LoadConfig()
+    private async Task LoadConfig() 
     {
-        if (module is not null)
-        {
+        if (module is not null) {
             var s = await module.InvokeAsync<CameraSettings?>("getSavedSettings");
-            if (s != null)
-            {
+            if (s != null) { 
                 if (videoDevices.Any(d => d.DeviceId == s.DeviceId)) SelectedDeviceId = s.DeviceId;
-                SelectedResolution = s.Resolution; SelectedFps = s.Fps;
+                SelectedResolution = s.Resolution; SelectedFps = s.Fps; 
             }
         }
     }
-    private async Task SaveConfig()
-    {
-        if (module is not null)
-        {
+    private async Task SaveConfig() { 
+        if (module is not null) {
             await module.InvokeVoidAsync("saveSettings", new CameraSettings { DeviceId = SelectedDeviceId, Resolution = SelectedResolution, Fps = SelectedFps });
             if (isCameraRunning) await StartCamera();
         }
     }
-    private async Task LoadVideoDevices()
-    {
-        if (module is not null)
-        {
+    private async Task LoadVideoDevices() {
+        if (module is not null) {
             var devices = await module.InvokeAsync<VideoDevice[]>("getVideoDevices");
             videoDevices = devices.ToList();
             if (videoDevices.Any() && string.IsNullOrEmpty(SelectedDeviceId)) SelectedDeviceId = videoDevices.First().DeviceId;
         }
     }
-    private async Task StartCamera()
-    {
-        if (module is not null)
-        {
+    private async Task StartCamera() {
+        if (module is not null) {
             int w = 0; int h = 0;
             if (SelectedResolution != "0x0") { var p = SelectedResolution.Split('x'); if (p.Length == 2) { int.TryParse(p[0], out w); int.TryParse(p[1], out h); } }
             await module.InvokeVoidAsync("startCamera", "videoFeed", SelectedDeviceId, w, h, SelectedFps);
             isCameraRunning = true;
         }
     }
-    private async Task StopCamera()
-    {
-        if (module is not null)
-        {
+    private async Task StopCamera() {
+        if (module is not null) {
             if (isRecording) await StopRecording();
             await module.InvokeVoidAsync("stopCamera", "videoFeed");
             isCameraRunning = false;

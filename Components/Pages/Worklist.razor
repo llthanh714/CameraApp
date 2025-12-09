@@ -121,7 +121,7 @@
 
     private async Task LoadData()
     {
-        patients = null;
+        patients = new List<Patient>();
         StateHasChanged();
         await Task.Delay(300);
         patients = await HisService.GetWorklistAsync();
