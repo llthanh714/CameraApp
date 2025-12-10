@@ -16,37 +16,35 @@ namespace CameraApp.Controllers
             if (!Directory.Exists(_uploadPath)) Directory.CreateDirectory(_uploadPath);
         }
 
+        // API này sẽ được gọi liên tục mỗi vài giây khi đang quay video
         [HttpPost("append/{fileName}")]
         public async Task<IActionResult> AppendChunk(string fileName, [FromForm] IFormFile chunk)
         {
             if (chunk == null || chunk.Length == 0)
-                return BadRequest("Không có dữ liệu gửi lên.");
+                return BadRequest("Empty chunk");
 
-            // 1. Sanitize FileName (Chống Path Traversal)
-            // Chỉ lấy tên file, loại bỏ mọi ký tự đường dẫn như ".." hay "/"
+            // 1. Sanitize (Bảo mật tên file)
             var safeFileName = Path.GetFileName(fileName);
-
-            // 2. Validate Extension (Bảo mật)
             var ext = Path.GetExtension(safeFileName).ToLowerInvariant();
+            
             if (!_allowedExtensions.Contains(ext))
-            {
-                return BadRequest($"Định dạng file không hỗ trợ: {ext}");
-            }
+                return BadRequest("Invalid extension");
 
             var filePath = Path.Combine(_uploadPath, safeFileName);
 
             try 
             {
-                // Mở file với chế độ Append (Nối thêm vào cuối file)
-                using (var stream = new FileStream(filePath, FileMode.Append))
+                // Dùng FileShare.Write để tránh lock nếu request đến quá dồn dập
+                // FileMode.Append: Tự tạo mới nếu chưa có, nối đuôi nếu đã có
+                using (var stream = new FileStream(filePath, FileMode.Append, FileAccess.Write, FileShare.None))
                 {
                     await chunk.CopyToAsync(stream);
                 }
-                return Ok();
+                return Ok(new { size = chunk.Length });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"Lỗi server: {ex.Message}");
+                return StatusCode(500, $"Write error: {ex.Message}");
             }
         }
     }

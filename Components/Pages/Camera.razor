@@ -142,9 +142,9 @@
                     <div class="position-absolute bottom-0 start-50 translate-middle-x mb-4">
                         <div class="camera-dock">
                             
-                            <!-- Nút Chụp Ảnh -->
-                            <button class="btn-shutter" @onclick="CaptureFrame" title="Lưu ảnh (Phím cách)">
-                                <div class="btn-shutter-inner">
+                            <!-- Nút Chụp Ảnh (Disabled khi đang quay video) -->
+                            <button class="btn-shutter" @onclick="CaptureFrame" disabled="@isRecording" title="Lưu ảnh (Phím cách)">
+                                <div class="btn-shutter-inner" style="@(isRecording ? "opacity: 0.5" : "")">
                                     <i class="bi bi-camera-fill text-dark fs-5"></i>
                                 </div>
                             </button>
@@ -163,7 +163,7 @@
                     @if (isRecording)
                     {
                          <div class="position-absolute top-0 end-0 m-4 px-3 py-2 rounded-pill bg-danger text-white d-flex align-items-center gap-2 small fw-bold shadow" style="backdrop-filter: blur(4px);">
-                            <div class="spinner-grow spinner-grow-sm" role="status"></div> REC
+                            <div class="spinner-grow spinner-grow-sm" role="status"></div> REC (Trực tiếp)
                         </div>
                     }
                 }
@@ -205,30 +205,25 @@
                                         }
                                         else
                                         {
+                                            <!-- Video src bây giờ trỏ thẳng vào uploads/ trên server -->
                                             <video src="@item.Url" controls class="w-100 rounded-3 shadow-sm border border-light border-opacity-10"></video>
                                             <div class="position-absolute top-0 start-0 m-1 px-2 py-1 bg-danger bg-opacity-75 rounded-2 text-white" style="font-size: 0.65rem; font-weight: bold;">VID</div>
                                         }
                                         
                                         <!-- Actions -->
                                         <div class="position-absolute top-0 end-0 m-1 d-flex gap-1">
-                                            <!-- Download -->
                                             <a href="@item.Url" download="@item.Filename" class="btn btn-sm btn-dark rounded-circle bg-opacity-75 border-0 d-flex align-items-center justify-content-center" style="width: 28px; height: 28px;" title="Tải về máy"><i class="bi bi-download" style="font-size: 0.8rem"></i></a>
-                                            <!-- Delete (NEW) -->
                                             <button @onclick="() => DeleteItem(item)" class="btn btn-sm btn-danger rounded-circle bg-opacity-75 border-0 d-flex align-items-center justify-content-center" style="width: 28px; height: 28px;" title="Xóa bỏ"><i class="bi bi-trash" style="font-size: 0.8rem"></i></button>
                                         </div>
 
-                                        <div class="position-absolute bottom-0 end-0 m-1 p-1 rounded-circle bg-dark bg-opacity-50 d-flex align-items-center justify-content-center cursor-pointer" style="width: 24px; height: 24px;" title="@GetStatusTitle(item)" @onclick="() => RetryUpload(item)">
+                                        <div class="position-absolute bottom-0 end-0 m-1 p-1 rounded-circle bg-dark bg-opacity-50 d-flex align-items-center justify-content-center" style="width: 24px; height: 24px;">
                                             @if (item.IsUploading)
                                             {
                                                 <div class="spinner-border spinner-border-sm text-light" role="status" style="width: 0.8rem; height: 0.8rem;"></div>
                                             }
                                             else if (item.IsUploaded)
                                             {
-                                                <i class="bi bi-check-circle-fill text-success" style="font-size: 0.9rem;"></i>
-                                            }
-                                            else
-                                            {
-                                                <i class="bi bi-exclamation-circle-fill text-danger" style="font-size: 0.9rem;"></i>
+                                                <i class="bi bi-cloud-check-fill text-success" title="Đã lưu trên Server"></i>
                                             }
                                         </div>
                                     </div>
@@ -290,6 +285,9 @@
     private bool isRecording = false;
     private bool isDarkMode = true;
     private bool isGlobalUploading = false;
+    
+    // Lưu tên file video hiện tại đang quay để xử lý khi kết thúc
+    private string? currentRecordingFileName;
 
     public class MediaItem {
         public string Type { get; set; } = "image";
@@ -345,7 +343,8 @@
     [JSInvokable]
     public async Task TriggerCapture()
     {
-        if (isCameraRunning)
+        // Chặn chụp ảnh nếu đang quay video để tránh xung đột tài nguyên
+        if (isCameraRunning && !isRecording)
         {
             await CaptureFrame();
             await InvokeAsync(StateHasChanged);
@@ -359,17 +358,9 @@
         await InvokeAsync(StateHasChanged);
         try
         {
-            // API upload đã được bảo mật, nên ta gửi file lên an toàn
+            // Chỉ dùng cho Ảnh. Video được upload luồng riêng.
             var success = await module.InvokeAsync<bool>("uploadMedia", item.Url, item.Filename, "api/Video/append");
-            if (success) 
-            {
-                item.IsUploaded = true;
-            }
-            else 
-            {
-                item.IsUploaded = false;
-                ShowError($"Lỗi upload file {item.Filename}");
-            }
+            item.IsUploaded = success;
         }
         catch (Exception ex)
         {
@@ -385,27 +376,19 @@
 
     private async Task RetryUpload(MediaItem item)
     {
-        if (!item.IsUploaded && !item.IsUploading) await UploadItemImmediately(item);
+        // Video stream thì mặc định đã ở server rồi, không cần retry kiểu này trừ khi logic phức tạp hơn
+        if (item.Type == "image" && !item.IsUploaded && !item.IsUploading) await UploadItemImmediately(item);
     }
 
-    // --- NEW: Chức năng Xóa item và giải phóng bộ nhớ ---
     private async Task DeleteItem(MediaItem item)
     {
-        if (module is not null)
+        if (module is not null && item.Type == "image")
         {
-            // 1. Giải phóng Blob URL trong JS để tránh leak RAM
             await module.InvokeVoidAsync("revokeUrl", item.Url);
         }
-        // 2. Xóa khỏi danh sách UI
+        // TODO: Nếu là Video, có thể gọi API xóa file trên server nếu muốn dọn dẹp triệt để
         capturedItems.Remove(item);
         StateHasChanged();
-    }
-
-    private string GetStatusTitle(MediaItem item)
-    {
-        if (item.IsUploading) return "Đang lưu lên máy chủ...";
-        if (item.IsUploaded) return "Đã lưu an toàn";
-        return "Lỗi lưu file - Nhấn để thử lại";
     }
 
     private async Task BackToWorklist()
@@ -416,7 +399,8 @@
 
     private async Task FinishExam()
     {
-        var failedItems = capturedItems.Where(x => !x.IsUploaded && !x.IsUploading).ToList();
+        // Chỉ còn ảnh có thể bị lỗi upload, video thì upload real-time rồi
+        var failedItems = capturedItems.Where(x => x.Type == "image" && !x.IsUploaded && !x.IsUploading).ToList();
 
         if (failedItems.Any())
         {
@@ -442,15 +426,9 @@
                 var url = await module.InvokeAsync<string>("takePicture", "videoFeed");
                 if (string.IsNullOrEmpty(url)) return;
 
-                // TẠO TÊN FILE UNIQUE ĐỂ TRÁNH GHI ĐÈ
                 var uniqueName = $"IMG_{DateTime.Now:yyyyMMdd_HHmmss}_{Guid.NewGuid().ToString().Substring(0, 8)}.jpg";
-
-                var newItem = new MediaItem { 
-                    Type = "image", 
-                    Url = url, 
-                    Timestamp = DateTime.Now, 
-                    Filename = uniqueName
-                };
+                var newItem = new MediaItem { Type = "image", Url = url, Timestamp = DateTime.Now, Filename = uniqueName };
+                
                 capturedItems.Add(newItem);
                 _ = UploadItemImmediately(newItem);
             } catch (Exception ex) { ShowError($"Lỗi chụp ảnh: {ex.Message}"); }
@@ -458,28 +436,59 @@
     }
 
     private async Task ToggleRecording() { if (isRecording) await StopRecording(); else await StartRecording(); }
-    private async Task StartRecording() { if (module is not null && await module.InvokeAsync<bool>("startRecording", "videoFeed")) isRecording = true; }
+
+    private async Task StartRecording() 
+    { 
+        if (module is not null) 
+        {
+            // 1. Tạo tên file TRƯỚC khi quay
+            currentRecordingFileName = $"VID_{DateTime.Now:yyyyMMdd_HHmmss}_{Guid.NewGuid().ToString().Substring(0, 8)}.webm";
+            
+            // 2. Gọi hàm JS mới: startRecordingStream
+            var success = await module.InvokeAsync<bool>("startRecordingStream", "videoFeed", currentRecordingFileName, "api/Video/append");
+            
+            if (success) 
+            {
+                isRecording = true;
+            }
+            else 
+            {
+                ShowError("Không thể bắt đầu ghi hình.");
+            }
+        } 
+    }
+
     private async Task StopRecording() 
     {
-        if (module is not null) 
+        if (module is not null && !string.IsNullOrEmpty(currentRecordingFileName)) 
         { 
             try {
-                var url = await module.InvokeAsync<string>("stopRecording"); 
+                // 1. Dừng quay và đợi đẩy nốt chunk cuối lên server
+                await module.InvokeVoidAsync("stopRecordingStream"); 
                 isRecording = false;
-                if (string.IsNullOrEmpty(url)) return;
 
-                // TẠO TÊN FILE UNIQUE
-                var uniqueName = $"VID_{DateTime.Now:yyyyMMdd_HHmmss}_{Guid.NewGuid().ToString().Substring(0, 8)}.webm";
+                // 2. Lúc này file đã nằm trọn vẹn trên server tại thư mục /uploads/
+                var serverUrl = $"uploads/{currentRecordingFileName}";
 
+                // 3. Hiển thị lên UI
                 var newItem = new MediaItem { 
                     Type = "video", 
-                    Url = url, 
+                    Url = serverUrl, // URL trực tiếp từ server
                     Timestamp = DateTime.Now, 
-                    Filename = uniqueName 
+                    Filename = currentRecordingFileName,
+                    IsUploaded = true // Video stream xong là coi như đã upload
                 };
+                
                 capturedItems.Add(newItem);
-                _ = UploadItemImmediately(newItem);
-            } catch (Exception ex) { ShowError($"Lỗi dừng ghi: {ex.Message}"); isRecording = false; }
+                StateHasChanged();
+
+                currentRecordingFileName = null;
+            } 
+            catch (Exception ex) 
+            { 
+                ShowError($"Lỗi dừng ghi: {ex.Message}"); 
+                isRecording = false; 
+            }
         }
     }
     
@@ -487,10 +496,10 @@
     {
         errorMessage = msg;
         StateHasChanged();
-        // Tự ẩn sau 5s
         _ = Task.Delay(5000).ContinueWith(_ => { errorMessage = null; InvokeAsync(StateHasChanged); });
     }
 
+    // --- Các hàm setting camera giữ nguyên ---
     private async Task ToggleTheme() { isDarkMode = !isDarkMode; await ApplyTheme(); }
     private async Task ApplyTheme() { if (module is not null) await module.InvokeVoidAsync("setTheme", isDarkMode ? "dark" : "light"); }
     private async Task LoadConfig() 
@@ -522,7 +531,7 @@
             if (SelectedResolution != "0x0") { var p = SelectedResolution.Split('x'); if (p.Length == 2) { int.TryParse(p[0], out w); int.TryParse(p[1], out h); } }
             await module.InvokeVoidAsync("startCamera", "videoFeed", SelectedDeviceId, w, h, SelectedFps);
             isCameraRunning = true;
-            errorMessage = null; // Clear error if success
+            errorMessage = null;
         }
     }
     private async Task StopCamera() {
@@ -535,10 +544,9 @@
     
     private async Task CleanupResources()
     {
-        // Dọn dẹp tất cả blob URL đang còn tồn tại trong list
         if (module is not null)
         {
-            foreach(var item in capturedItems)
+            foreach(var item in capturedItems.Where(x => x.Type == "image"))
             {
                 await module.InvokeVoidAsync("revokeUrl", item.Url);
             }

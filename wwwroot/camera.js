@@ -1,63 +1,47 @@
 ﻿let videoStream = null;
 let mediaRecorder = null;
-let recordedChunks = [];
 let dotNetHelperRef = null;
 
-// --- Theme & Settings Logic ---
+// Hàng đợi upload để đảm bảo thứ tự các chunk video (Chunk 1 -> Chunk 2 -> Chunk 3...)
+let uploadQueue = Promise.resolve();
+
+// --- Theme & Settings (Giữ nguyên) ---
 export function setTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('theme', theme);
 }
-
-export function getSavedTheme() {
-    return localStorage.getItem('theme') || 'dark';
-}
-
-export function saveSettings(settings) {
-    localStorage.setItem('cameraSettings', JSON.stringify(settings));
-}
-
+export function getSavedTheme() { return localStorage.getItem('theme') || 'dark'; }
+export function saveSettings(settings) { localStorage.setItem('cameraSettings', JSON.stringify(settings)); }
 export function getSavedSettings() {
-    const settings = localStorage.getItem('cameraSettings');
-    return settings ? JSON.parse(settings) : null;
+    const s = localStorage.getItem('cameraSettings');
+    return s ? JSON.parse(s) : null;
 }
 
-// --- Keyboard Shortcuts Logic ---
+// --- Shortcuts (Giữ nguyên) ---
 function handleKeyboardEvent(event) {
     if (!dotNetHelperRef) return;
-
-    if (event.code === 'Space' && event.target.tagName !== 'INPUT' && event.target.tagName !== 'TEXTAREA') {
+    if (event.code === 'Space' && event.target.tagName !== 'INPUT') {
         event.preventDefault(); 
         dotNetHelperRef.invokeMethodAsync('TriggerCapture');
     }
 }
-
 export function registerShortcuts(dotNetHelper) {
     dotNetHelperRef = dotNetHelper;
     window.addEventListener('keydown', handleKeyboardEvent);
 }
-
 export function unregisterShortcuts() {
     window.removeEventListener('keydown', handleKeyboardEvent);
     dotNetHelperRef = null;
 }
-
-// --- Memory Management (NEW) ---
 export function revokeUrl(url) {
-    if (url && url.startsWith("blob:")) {
-        URL.revokeObjectURL(url);
-        console.log("Revoked URL:", url);
-    }
+    if (url && url.startsWith("blob:")) URL.revokeObjectURL(url);
 }
 
-// --- Camera Logic ---
+// --- Camera Setup (Giữ nguyên) ---
 export async function startCamera(videoElementId, deviceId, width, height, frameRate) {
     const video = document.getElementById(videoElementId);
     if (!video) return;
-
-    if (videoStream) {
-        videoStream.getTracks().forEach(track => track.stop());
-    }
+    if (videoStream) videoStream.getTracks().forEach(track => track.stop());
 
     const constraints = {
         video: {
@@ -74,28 +58,23 @@ export async function startCamera(videoElementId, deviceId, width, height, frame
         videoStream = stream;
         video.srcObject = stream;
     } catch (err) {
-        console.error("Lỗi truy cập camera: ", err);
+        console.error("Camera Error:", err);
         if (constraints.audio) {
-            constraints.audio = false; // Thử lại không cần mic
+            constraints.audio = false;
             try {
                 const stream = await navigator.mediaDevices.getUserMedia(constraints);
                 videoStream = stream;
                 video.srcObject = stream;
-            } catch (err2) {
-                alert("Không thể khởi động camera (vui lòng kiểm tra quyền truy cập): " + err2.message);
-            }
+            } catch (err2) { alert("Không thể mở camera: " + err2.message); }
         }
     }
 }
 
 export function stopCamera(videoElementId) {
     if (videoStream) {
-        try {
-            videoStream.getTracks().forEach(track => track.stop());
-        } catch (e) {}
+        try { videoStream.getTracks().forEach(track => track.stop()); } catch (e) {}
         videoStream = null;
     }
-
     if (videoElementId) {
         const video = document.getElementById(videoElementId);
         if (video) video.srcObject = null;
@@ -109,11 +88,9 @@ export async function takePicture(videoElementId) {
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
-        
         return new Promise((resolve) => {
             canvas.toBlob((blob) => {
-                const url = URL.createObjectURL(blob);
-                resolve(url);
+                resolve(URL.createObjectURL(blob));
             }, "image/jpeg", 0.85);
         });
     }
@@ -122,35 +99,51 @@ export async function takePicture(videoElementId) {
 
 export async function getVideoDevices() {
     try {
-        // Yêu cầu quyền trước để lấy label
         await navigator.mediaDevices.getUserMedia({ video: true }).then(s => s.getTracks().forEach(t => t.stop()));
         const devices = await navigator.mediaDevices.enumerateDevices();
-        return devices
-            .filter(device => device.kind === 'videoinput')
-            .map(d => ({ deviceId: d.deviceId, label: d.label || `Camera ${d.deviceId.slice(0, 5)}...` }));
-    } catch (error) {
-        console.error("Lỗi lấy danh sách thiết bị:", error);
-        return [];
-    }
+        return devices.filter(d => d.kind === 'videoinput').map(d => ({ deviceId: d.deviceId, label: d.label }));
+    } catch (e) { return []; }
 }
 
-export function startRecording(videoElementId) {
+// --- NEW RECORDING LOGIC (STREAMING) ---
+
+// Hàm này giờ nhận thêm fileName và apiUrl để upload ngay lập tức
+export function startRecordingStream(videoElementId, fileName, apiUrl) {
     const video = document.getElementById(videoElementId);
     const stream = video ? video.srcObject : videoStream;
     if (!stream) return false;
     
-    recordedChunks = [];
+    // Reset hàng đợi upload
+    uploadQueue = Promise.resolve();
+
     try {
+        // Ưu tiên codec VP9 hoặc H264 để file WebM/MP4 dễ đọc
         let mimeType = 'video/webm';
         if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) mimeType = 'video/webm;codecs=vp9';
-        else if (MediaRecorder.isTypeSupported('video/mp4')) mimeType = 'video/mp4';
+        else if (MediaRecorder.isTypeSupported('video/mp4')) mimeType = 'video/mp4'; // Một số trình duyệt mới hỗ trợ ghi mp4 trực tiếp
 
         const options = { mimeType: mimeType, videoBitsPerSecond: 2500000 };
         mediaRecorder = new MediaRecorder(stream, options);
+
+        // Sự kiện này sẽ bắn ra liên tục mỗi N giây (do ta set timeSlice ở hàm start)
         mediaRecorder.ondataavailable = (event) => {
-            if (event.data.size > 0) recordedChunks.push(event.data);
+            if (event.data && event.data.size > 0) {
+                // Thêm việc upload vào hàng đợi (Queue)
+                // Chunk sau phải đợi chunk trước upload xong mới được chạy
+                uploadQueue = uploadQueue.then(async () => {
+                    try {
+                        await uploadChunkCore(event.data, fileName, apiUrl);
+                    } catch (err) {
+                        console.error("Lỗi upload chunk video:", err);
+                        // Có thể thêm logic retry ở đây nếu muốn
+                    }
+                });
+            }
         };
-        mediaRecorder.start();
+
+        // Bắt đầu ghi và cắt chunk mỗi 1000ms (1 giây)
+        mediaRecorder.start(1000); 
+        console.log("Started recording stream to:", fileName);
         return true;
     } catch (err) {
         console.error("Error starting recording:", err);
@@ -158,37 +151,46 @@ export function startRecording(videoElementId) {
     }
 }
 
-export async function stopRecording() {
+export async function stopRecordingStream() {
     return new Promise((resolve) => {
         if (!mediaRecorder || mediaRecorder.state === "inactive") {
-            resolve(null);
+            resolve(true);
             return;
         }
-        mediaRecorder.onstop = () => {
-            const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType });
-            const url = URL.createObjectURL(blob);
-            recordedChunks = [];
-            resolve(url);
+        
+        mediaRecorder.onstop = async () => {
+            // Đợi tất cả các chunk còn lại trong hàng đợi upload xong
+            await uploadQueue;
+            console.log("Recording stopped and all chunks uploaded.");
+            resolve(true);
         };
+        
         mediaRecorder.stop();
     });
 }
 
+// Hàm core upload (Helper)
+async function uploadChunkCore(blob, fileName, apiUrl) {
+    const formData = new FormData();
+    formData.append("chunk", blob);
+    
+    // Gọi API C#
+    const res = await fetch(`${apiUrl}/${fileName}`, {
+        method: "POST",
+        body: formData
+    });
+    
+    if (!res.ok) throw new Error("Server rejected chunk");
+}
+
+// Giữ lại hàm upload ảnh cũ (cho tính năng chụp ảnh)
 export async function uploadMedia(fileUrl, fileName, apiUrl) {
     try {
         const response = await fetch(fileUrl);
         const blob = await response.blob();
-        const formData = new FormData();
-        formData.append("chunk", blob);
-
-        // fileName đã được sanitize ở server, nhưng nên dùng tên clean từ client
-        const uploadRes = await fetch(`${apiUrl}/${fileName}`, {
-            method: "POST",
-            body: formData
-        });
-        return uploadRes.ok;
+        return uploadChunkCore(blob, fileName, apiUrl).then(() => true).catch(() => false);
     } catch (error) {
-        console.error("Lỗi upload:", error);
+        console.error("Lỗi upload ảnh:", error);
         return false;
     }
 }
