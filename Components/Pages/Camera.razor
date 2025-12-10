@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @inject IJSRuntime JSRuntime
 @inject NavigationManager NavManager
+@implements IAsyncDisposable
 
 <PageTitle>@(string.IsNullOrEmpty(_displayPatientName) ? "Gemini Studio" : $"Siêu âm: {_displayPatientName}")</PageTitle>
 
@@ -263,14 +264,13 @@
     private bool isCameraRunning = false;
     private bool isRecording = false;
     private bool isDarkMode = true;
-    private bool isGlobalUploading = false; // Dùng cho trạng thái xử lý cuối cùng
+    private bool isGlobalUploading = false;
 
     public class MediaItem {
         public string Type { get; set; } = "image";
         public string Url { get; set; } = "";
         public string Filename { get; set; } = "";
         public DateTime Timestamp { get; set; }
-        // Trạng thái Upload Realtime
         public bool IsUploading { get; set; } = false;
         public bool IsUploaded { get; set; } = false;
     }
@@ -316,20 +316,11 @@
     private async Task UploadItemImmediately(MediaItem item)
     {
         if (module is null) return;
-
         item.IsUploading = true;
-        await InvokeAsync(StateHasChanged); // Update UI ngay để hiện spinner
-
+        await InvokeAsync(StateHasChanged);
         try
         {
-            // Gọi hàm JS uploadMedia đã có sẵn logic FormData
-            var success = await module.InvokeAsync<bool>(
-                "uploadMedia",
-                item.Url,
-                item.Filename,
-                "api/Video/append" 
-            );
-
+            var success = await module.InvokeAsync<bool>("uploadMedia", item.Url, item.Filename, "api/Video/append");
             item.IsUploaded = success;
         }
         catch (Exception ex)
@@ -346,10 +337,7 @@
 
     private async Task RetryUpload(MediaItem item)
     {
-        if (!item.IsUploaded && !item.IsUploading)
-        {
-            await UploadItemImmediately(item);
-        }
+        if (!item.IsUploaded && !item.IsUploading) await UploadItemImmediately(item);
     }
 
     private string GetStatusTitle(MediaItem item)
@@ -359,41 +347,34 @@
         return "Lỗi lưu file - Nhấn để thử lại";
     }
 
-    // --- Actions ---
-
-    private void BackToWorklist() => NavManager.NavigateTo("/worklist");
+    // --- CẬP NHẬT: Chủ động tắt camera trước khi chuyển trang ---
+    private async Task BackToWorklist()
+    {
+        // 1. Tắt camera trước
+        await StopCamera(); 
+        // 2. Mới chuyển trang
+        NavManager.NavigateTo("/worklist");
+    }
 
     private async Task FinishExam()
     {
-        // Kiểm tra xem có file nào bị lỗi chưa upload được không
         var failedItems = capturedItems.Where(x => !x.IsUploaded && !x.IsUploading).ToList();
 
         if (failedItems.Any())
         {
             isGlobalUploading = true;
             StateHasChanged();
-            
-            // Cố gắng upload lại các file lỗi lần cuối
-            foreach (var item in failedItems)
-            {
-                await UploadItemImmediately(item);
-            }
-            
+            foreach (var item in failedItems) await UploadItemImmediately(item);
             isGlobalUploading = false;
             StateHasChanged();
         }
 
-        // Nếu tất cả đã ổn (hoặc chấp nhận rủi ro nếu vẫn lỗi sau khi retry), quay về
         if (capturedItems.All(x => x.IsUploaded))
         {
+            // 1. Tắt camera trước
+            await StopCamera();
+            // 2. Mới chuyển trang
             NavManager.NavigateTo("/worklist");
-        }
-        else
-        {
-            // Có thể hiện thông báo: "Còn file chưa lưu được, bạn có chắc muốn thoát?"
-            // Hiện tại code sẽ giữ người dùng ở lại để họ thấy file lỗi.
-            // Để đơn giản, ta cho phép thoát luôn hoặc giữ lại tùy policy.
-            // Ở đây tôi chọn giữ lại để user biết file nào lỗi.
         }
     }
 
@@ -402,29 +383,16 @@
         if (module is not null) 
         {
             try {
-                // Lấy Blob URL từ JS (nhanh hơn Base64)
                 var url = await module.InvokeAsync<string>("takePicture", "videoFeed");
-                
-                var newItem = new MediaItem { 
-                    Type = "image", 
-                    Url = url, 
-                    Timestamp = DateTime.Now, 
-                    Filename = $"IMG_{DateTime.Now:yyyyMMdd_HHmmss}.png" 
-                };
-                
+                var newItem = new MediaItem { Type = "image", Url = url, Timestamp = DateTime.Now, Filename = $"IMG_{DateTime.Now:yyyyMMdd_HHmmss}.jpg" };
                 capturedItems.Add(newItem);
-                
-                // Kích hoạt upload ngay lập tức (Fire and forget task để không block UI)
                 _ = UploadItemImmediately(newItem);
-            } catch (Exception ex) {
-                Console.WriteLine($"Capture error: {ex.Message}");
-            }
+            } catch (Exception ex) { Console.WriteLine($"Capture error: {ex.Message}"); }
         }
     }
 
     private async Task ToggleRecording() { if (isRecording) await StopRecording(); else await StartRecording(); }
     private async Task StartRecording() { if (module is not null && await module.InvokeAsync<bool>("startRecording", "videoFeed")) isRecording = true; }
-    
     private async Task StopRecording() 
     {
         if (module is not null) 
@@ -432,22 +400,10 @@
             try {
                 var url = await module.InvokeAsync<string>("stopRecording"); 
                 isRecording = false;
-                
-                var newItem = new MediaItem { 
-                    Type = "video", 
-                    Url = url, 
-                    Timestamp = DateTime.Now, 
-                    Filename = $"VID_{DateTime.Now:yyyyMMdd_HHmmss}.webm" 
-                };
-                
+                var newItem = new MediaItem { Type = "video", Url = url, Timestamp = DateTime.Now, Filename = $"VID_{DateTime.Now:yyyyMMdd_HHmmss}.webm" };
                 capturedItems.Add(newItem);
-
-                // Kích hoạt upload ngay lập tức
                 _ = UploadItemImmediately(newItem);
-            } catch (Exception ex) {
-                 Console.WriteLine($"Recording stop error: {ex.Message}");
-                 isRecording = false;
-            }
+            } catch (Exception ex) { Console.WriteLine($"Recording stop error: {ex.Message}"); isRecording = false; }
         }
     }
     
@@ -489,6 +445,23 @@
             if (isRecording) await StopRecording();
             await module.InvokeVoidAsync("stopCamera", "videoFeed");
             isCameraRunning = false;
+        }
+    }
+
+    // Tự động ngắt kết nối và dọn dẹp khi rời trang
+    public async ValueTask DisposeAsync()
+    {
+        try 
+        {
+            if (module is not null)
+            {
+                await module.InvokeVoidAsync("stopCamera", "videoFeed");
+                await module.DisposeAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Dispose cleanup warning: {ex.Message}");
         }
     }
 
