@@ -26,9 +26,8 @@ export function getSavedSettings() {
 function handleKeyboardEvent(event) {
     if (!dotNetHelperRef) return;
 
-    // Chỉ giữ lại phím Space để chụp ảnh
     if (event.code === 'Space' && event.target.tagName !== 'INPUT' && event.target.tagName !== 'TEXTAREA') {
-        event.preventDefault(); // Ngăn cuộn trang
+        event.preventDefault(); 
         dotNetHelperRef.invokeMethodAsync('TriggerCapture');
     }
 }
@@ -41,6 +40,14 @@ export function registerShortcuts(dotNetHelper) {
 export function unregisterShortcuts() {
     window.removeEventListener('keydown', handleKeyboardEvent);
     dotNetHelperRef = null;
+}
+
+// --- Memory Management (NEW) ---
+export function revokeUrl(url) {
+    if (url && url.startsWith("blob:")) {
+        URL.revokeObjectURL(url);
+        console.log("Revoked URL:", url);
+    }
 }
 
 // --- Camera Logic ---
@@ -69,20 +76,19 @@ export async function startCamera(videoElementId, deviceId, width, height, frame
     } catch (err) {
         console.error("Lỗi truy cập camera: ", err);
         if (constraints.audio) {
-            constraints.audio = false;
+            constraints.audio = false; // Thử lại không cần mic
             try {
                 const stream = await navigator.mediaDevices.getUserMedia(constraints);
                 videoStream = stream;
                 video.srcObject = stream;
             } catch (err2) {
-                alert("Không thể khởi động camera: " + err2.message);
+                alert("Không thể khởi động camera (vui lòng kiểm tra quyền truy cập): " + err2.message);
             }
         }
     }
 }
 
 export function stopCamera(videoElementId) {
-    // 1. Tắt stream từ biến toàn cục
     if (videoStream) {
         try {
             videoStream.getTracks().forEach(track => track.stop());
@@ -90,7 +96,6 @@ export function stopCamera(videoElementId) {
         videoStream = null;
     }
 
-    // 2. Dọn dẹp thẻ video
     if (videoElementId) {
         const video = document.getElementById(videoElementId);
         if (video) video.srcObject = null;
@@ -117,6 +122,7 @@ export async function takePicture(videoElementId) {
 
 export async function getVideoDevices() {
     try {
+        // Yêu cầu quyền trước để lấy label
         await navigator.mediaDevices.getUserMedia({ video: true }).then(s => s.getTracks().forEach(t => t.stop()));
         const devices = await navigator.mediaDevices.enumerateDevices();
         return devices
@@ -175,6 +181,7 @@ export async function uploadMedia(fileUrl, fileName, apiUrl) {
         const formData = new FormData();
         formData.append("chunk", blob);
 
+        // fileName đã được sanitize ở server, nhưng nên dùng tên clean từ client
         const uploadRes = await fetch(`${apiUrl}/${fileName}`, {
             method: "POST",
             body: formData

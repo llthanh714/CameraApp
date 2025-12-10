@@ -20,7 +20,6 @@
                         <h4 class="fw-bold mb-0 text-primary">@_displayPatientName</h4>
                         <span class="badge bg-secondary bg-opacity-25 text-body small">@_displayPatientCode</span>
                     </div>
-                    <!-- CẬP NHẬT: Hiển thị tên dịch vụ đăng ký -->
                     <small class="text-muted">
                         @if (!string.IsNullOrEmpty(_displayServiceName))
                         {
@@ -113,6 +112,15 @@
         </div>
     </div>
 
+    <!-- Alert Box -->
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger alert-dismissible fade show mb-3" role="alert">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i> @errorMessage
+            <button type="button" class="btn-close" @onclick="() => errorMessage = null"></button>
+        </div>
+    }
+
     <!-- Workspace Area -->
     <div class="row flex-grow-1 g-3 overflow-hidden">
         <!-- Video Feed -->
@@ -134,7 +142,7 @@
                     <div class="position-absolute bottom-0 start-50 translate-middle-x mb-4">
                         <div class="camera-dock">
                             
-                            <!-- Nút Chụp Ảnh (Có phím tắt Space) -->
+                            <!-- Nút Chụp Ảnh -->
                             <button class="btn-shutter" @onclick="CaptureFrame" title="Lưu ảnh (Phím cách)">
                                 <div class="btn-shutter-inner">
                                     <i class="bi bi-camera-fill text-dark fs-5"></i>
@@ -144,7 +152,7 @@
                             <!-- Vách ngăn -->
                             <div style="width: 1px; height: 32px; background: rgba(255,255,255,0.2);"></div>
 
-                            <!-- Nút Quay Phim (Không còn phím tắt) -->
+                            <!-- Nút Quay Phim -->
                             <button class="btn-record @(isRecording ? "recording pulse-ring" : "")" @onclick="ToggleRecording" title="@(isRecording ? "Dừng ghi" : "Ghi hình")">
                                 <div class="btn-record-inner"></div>
                             </button>
@@ -201,8 +209,12 @@
                                             <div class="position-absolute top-0 start-0 m-1 px-2 py-1 bg-danger bg-opacity-75 rounded-2 text-white" style="font-size: 0.65rem; font-weight: bold;">VID</div>
                                         }
                                         
-                                        <div class="position-absolute top-0 end-0 m-1">
+                                        <!-- Actions -->
+                                        <div class="position-absolute top-0 end-0 m-1 d-flex gap-1">
+                                            <!-- Download -->
                                             <a href="@item.Url" download="@item.Filename" class="btn btn-sm btn-dark rounded-circle bg-opacity-75 border-0 d-flex align-items-center justify-content-center" style="width: 28px; height: 28px;" title="Tải về máy"><i class="bi bi-download" style="font-size: 0.8rem"></i></a>
+                                            <!-- Delete (NEW) -->
+                                            <button @onclick="() => DeleteItem(item)" class="btn btn-sm btn-danger rounded-circle bg-opacity-75 border-0 d-flex align-items-center justify-content-center" style="width: 28px; height: 28px;" title="Xóa bỏ"><i class="bi bi-trash" style="font-size: 0.8rem"></i></button>
                                         </div>
 
                                         <div class="position-absolute bottom-0 end-0 m-1 p-1 rounded-circle bg-dark bg-opacity-50 d-flex align-items-center justify-content-center cursor-pointer" style="width: 24px; height: 24px;" title="@GetStatusTitle(item)" @onclick="() => RetryUpload(item)">
@@ -264,12 +276,12 @@
     [SupplyParameterFromQuery] public string? PatientId { get; set; }
     [SupplyParameterFromQuery] public string? PatientName { get; set; }
     [SupplyParameterFromQuery] public string? PatientCode { get; set; }
-    // CẬP NHẬT: Nhận tên dịch vụ từ URL
     [SupplyParameterFromQuery] public string? ServiceName { get; set; }
 
     private string? _displayPatientName;
     private string? _displayPatientCode;
     private string? _displayServiceName;
+    private string? errorMessage;
 
     private IJSObjectReference? module;
     private DotNetObjectReference<Camera>? objRef;
@@ -301,7 +313,6 @@
             _displayPatientName = PatientName;
             _displayPatientCode = PatientCode;
         }
-        // Gán tên dịch vụ để hiển thị
         _displayServiceName = ServiceName;
     }
 
@@ -326,12 +337,11 @@
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error initializing camera: {ex.Message}");
+                ShowError($"Khởi tạo thất bại: {ex.Message}");
             }
         }
     }
 
-    // --- JS INVOKABLE METHODS ---
     [JSInvokable]
     public async Task TriggerCapture()
     {
@@ -342,7 +352,6 @@
         }
     }
 
-    // --- Helper Upload Realtime ---
     private async Task UploadItemImmediately(MediaItem item)
     {
         if (module is null) return;
@@ -350,8 +359,17 @@
         await InvokeAsync(StateHasChanged);
         try
         {
+            // API upload đã được bảo mật, nên ta gửi file lên an toàn
             var success = await module.InvokeAsync<bool>("uploadMedia", item.Url, item.Filename, "api/Video/append");
-            item.IsUploaded = success;
+            if (success) 
+            {
+                item.IsUploaded = true;
+            }
+            else 
+            {
+                item.IsUploaded = false;
+                ShowError($"Lỗi upload file {item.Filename}");
+            }
         }
         catch (Exception ex)
         {
@@ -370,6 +388,19 @@
         if (!item.IsUploaded && !item.IsUploading) await UploadItemImmediately(item);
     }
 
+    // --- NEW: Chức năng Xóa item và giải phóng bộ nhớ ---
+    private async Task DeleteItem(MediaItem item)
+    {
+        if (module is not null)
+        {
+            // 1. Giải phóng Blob URL trong JS để tránh leak RAM
+            await module.InvokeVoidAsync("revokeUrl", item.Url);
+        }
+        // 2. Xóa khỏi danh sách UI
+        capturedItems.Remove(item);
+        StateHasChanged();
+    }
+
     private string GetStatusTitle(MediaItem item)
     {
         if (item.IsUploading) return "Đang lưu lên máy chủ...";
@@ -377,11 +408,9 @@
         return "Lỗi lưu file - Nhấn để thử lại";
     }
 
-    // --- Actions ---
-
     private async Task BackToWorklist()
     {
-        await StopCamera();
+        await CleanupResources();
         NavManager.NavigateTo("/worklist");
     }
 
@@ -400,7 +429,7 @@
 
         if (capturedItems.All(x => x.IsUploaded))
         {
-            await StopCamera();
+            await CleanupResources();
             NavManager.NavigateTo("/worklist");
         }
     }
@@ -411,10 +440,20 @@
         {
             try {
                 var url = await module.InvokeAsync<string>("takePicture", "videoFeed");
-                var newItem = new MediaItem { Type = "image", Url = url, Timestamp = DateTime.Now, Filename = $"IMG_{DateTime.Now:yyyyMMdd_HHmmss}.jpg" };
+                if (string.IsNullOrEmpty(url)) return;
+
+                // TẠO TÊN FILE UNIQUE ĐỂ TRÁNH GHI ĐÈ
+                var uniqueName = $"IMG_{DateTime.Now:yyyyMMdd_HHmmss}_{Guid.NewGuid().ToString().Substring(0, 8)}.jpg";
+
+                var newItem = new MediaItem { 
+                    Type = "image", 
+                    Url = url, 
+                    Timestamp = DateTime.Now, 
+                    Filename = uniqueName
+                };
                 capturedItems.Add(newItem);
                 _ = UploadItemImmediately(newItem);
-            } catch (Exception ex) { Console.WriteLine($"Capture error: {ex.Message}"); }
+            } catch (Exception ex) { ShowError($"Lỗi chụp ảnh: {ex.Message}"); }
         }
     }
 
@@ -427,13 +466,31 @@
             try {
                 var url = await module.InvokeAsync<string>("stopRecording"); 
                 isRecording = false;
-                var newItem = new MediaItem { Type = "video", Url = url, Timestamp = DateTime.Now, Filename = $"VID_{DateTime.Now:yyyyMMdd_HHmmss}.webm" };
+                if (string.IsNullOrEmpty(url)) return;
+
+                // TẠO TÊN FILE UNIQUE
+                var uniqueName = $"VID_{DateTime.Now:yyyyMMdd_HHmmss}_{Guid.NewGuid().ToString().Substring(0, 8)}.webm";
+
+                var newItem = new MediaItem { 
+                    Type = "video", 
+                    Url = url, 
+                    Timestamp = DateTime.Now, 
+                    Filename = uniqueName 
+                };
                 capturedItems.Add(newItem);
                 _ = UploadItemImmediately(newItem);
-            } catch (Exception ex) { Console.WriteLine($"Recording stop error: {ex.Message}"); isRecording = false; }
+            } catch (Exception ex) { ShowError($"Lỗi dừng ghi: {ex.Message}"); isRecording = false; }
         }
     }
     
+    private void ShowError(string msg)
+    {
+        errorMessage = msg;
+        StateHasChanged();
+        // Tự ẩn sau 5s
+        _ = Task.Delay(5000).ContinueWith(_ => { errorMessage = null; InvokeAsync(StateHasChanged); });
+    }
+
     private async Task ToggleTheme() { isDarkMode = !isDarkMode; await ApplyTheme(); }
     private async Task ApplyTheme() { if (module is not null) await module.InvokeVoidAsync("setTheme", isDarkMode ? "dark" : "light"); }
     private async Task LoadConfig() 
@@ -465,6 +522,7 @@
             if (SelectedResolution != "0x0") { var p = SelectedResolution.Split('x'); if (p.Length == 2) { int.TryParse(p[0], out w); int.TryParse(p[1], out h); } }
             await module.InvokeVoidAsync("startCamera", "videoFeed", SelectedDeviceId, w, h, SelectedFps);
             isCameraRunning = true;
+            errorMessage = null; // Clear error if success
         }
     }
     private async Task StopCamera() {
@@ -474,15 +532,28 @@
             isCameraRunning = false;
         }
     }
+    
+    private async Task CleanupResources()
+    {
+        // Dọn dẹp tất cả blob URL đang còn tồn tại trong list
+        if (module is not null)
+        {
+            foreach(var item in capturedItems)
+            {
+                await module.InvokeVoidAsync("revokeUrl", item.Url);
+            }
+        }
+        await StopCamera();
+    }
 
     public async ValueTask DisposeAsync()
     {
         try 
         {
+            await CleanupResources();
             if (module is not null)
             {
                 await module.InvokeVoidAsync("unregisterShortcuts");
-                await module.InvokeVoidAsync("stopCamera", "videoFeed");
                 await module.DisposeAsync();
             }
             objRef?.Dispose();
