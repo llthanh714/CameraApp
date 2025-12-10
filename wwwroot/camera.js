@@ -139,3 +139,27 @@ export async function stopRecording() {
         mediaRecorder.stop();
     });
 }
+
+export async function uploadMedia(fileUrl, fileName, apiUrl) {
+    try {
+        // 1. Chuyển đổi URL (Blob hoặc Base64) thành đối tượng Blob thực tế
+        const response = await fetch(fileUrl);
+        const blob = await response.blob();
+
+        // 2. Tạo FormData để gửi dữ liệu (khớp với [FromForm] IFormFile chunk trong C#)
+        const formData = new FormData();
+        formData.append("chunk", blob);
+
+        // 3. Gọi API Backend
+        // URL sẽ là: api/Video/append/{fileName}
+        const uploadRes = await fetch(`${apiUrl}/${fileName}`, {
+            method: "POST",
+            body: formData
+        });
+
+        return uploadRes.ok;
+    } catch (error) {
+        console.error("Lỗi upload:", error);
+        return false;
+    }
+}

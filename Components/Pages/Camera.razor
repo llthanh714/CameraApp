@@ -207,8 +207,16 @@
                 @if (capturedItems.Count > 0 && !string.IsNullOrEmpty(_displayPatientName))
                 {
                     <div class="mt-3 flex-shrink-0">
-                        <button class="btn btn-gemini w-100" @onclick="FinishExam">
-                            <i class="bi bi-check-lg"></i> Kết thúc
+                        <button class="btn btn-gemini w-100" @onclick="FinishExam" disabled="@isUploading">
+                            @if (isUploading)
+                            {
+                                <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                <span>Đang lưu dữ liệu...</span>
+                            }
+                            else
+                            {
+                                <i class="bi bi-check-lg"></i> <span>Kết thúc ca khám</span>
+                            }
                         </button>
                     </div>
                 }
@@ -237,7 +245,8 @@
     private bool isCameraRunning = false;
     private bool isRecording = false;
     private bool isDarkMode = true;
-    
+    private bool isUploading = false;
+
     public class MediaItem {
         public string Type { get; set; } = "image";
         public string Url { get; set; } = "";
@@ -276,7 +285,45 @@
     }
 
     private void BackToWorklist() => NavManager.NavigateTo("/worklist");
-    private void FinishExam() => NavManager.NavigateTo("/worklist");
+    private async Task FinishExam()
+    {
+        // Nếu không có ảnh/video nào thì về luôn
+        if (capturedItems.Count == 0)
+        {
+            NavManager.NavigateTo("/worklist");
+            return;
+        }
+
+        // Bắt đầu quá trình lưu
+        isUploading = true;
+        StateHasChanged(); // Cập nhật giao diện để hiện loading
+
+        if (module is not null)
+        {
+            foreach (var item in capturedItems)
+            {
+                // Gọi hàm JS để upload file lên controller
+                // Endpoint là "api/Video/append" khớp với VideoController.cs
+                var success = await module.InvokeAsync<bool>(
+                    "uploadMedia", 
+                    item.Url, 
+                    item.Filename, 
+                    "api/Video/append" 
+                );
+
+                if (!success)
+                {
+                    // Tùy chọn: Xử lý lỗi nếu muốn (ví dụ: hiện thông báo)
+                    Console.WriteLine($"Lỗi khi lưu file: {item.Filename}");
+                }
+            }
+        }
+
+        isUploading = false;
+        
+        // Lưu xong thì mới chuyển trang
+        NavManager.NavigateTo("/worklist");
+    }
 
     private async Task CaptureFrame()
     {
