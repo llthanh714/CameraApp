@@ -4,7 +4,7 @@
 @inject NavigationManager NavManager
 @implements IAsyncDisposable
 
-<PageTitle>@(string.IsNullOrEmpty(_displayPatientName) ? "Gemini Studio" : $"Siêu âm: {_displayPatientName}")</PageTitle>
+<PageTitle>@(string.IsNullOrEmpty(_displayPatientName) ? "Gemini Studio" : $"{_displayServiceName ?? "Lấy ảnh"}: {_displayPatientName}")</PageTitle>
 
 <div class="container-fluid h-100 d-flex flex-column p-4 fade-in">
     <!-- Header Area -->
@@ -20,7 +20,17 @@
                         <h4 class="fw-bold mb-0 text-primary">@_displayPatientName</h4>
                         <span class="badge bg-secondary bg-opacity-25 text-body small">@_displayPatientCode</span>
                     </div>
-                    <small class="text-muted">Chế độ: Ghi hình Siêu âm</small>
+                    <!-- CẬP NHẬT: Hiển thị tên dịch vụ đăng ký -->
+                    <small class="text-muted">
+                        @if (!string.IsNullOrEmpty(_displayServiceName))
+                        {
+                            <i class="bi bi-clipboard2-pulse me-1"></i>@_displayServiceName
+                        }
+                        else
+                        {
+                            <span>Chế độ: Lấy ảnh / Ghi hình</span>
+                        }
+                    </small>
                 </div>
             }
             else
@@ -91,7 +101,7 @@
             @if (!isCameraRunning)
             {
                 <button class="btn-gemini w-100" @onclick="StartCamera">
-                    <i class="bi bi-power"></i> Kết nối Máy SA
+                    <i class="bi bi-power"></i> Kết nối Camera
                 </button>
             }
             else
@@ -124,7 +134,7 @@
                     <div class="position-absolute bottom-0 start-50 translate-middle-x mb-4">
                         <div class="camera-dock">
                             
-                            <!-- Nút Chụp Ảnh (Icon Only) -->
+                            <!-- Nút Chụp Ảnh (Có phím tắt Space) -->
                             <button class="btn-shutter" @onclick="CaptureFrame" title="Lưu ảnh (Phím cách)">
                                 <div class="btn-shutter-inner">
                                     <i class="bi bi-camera-fill text-dark fs-5"></i>
@@ -134,8 +144,8 @@
                             <!-- Vách ngăn -->
                             <div style="width: 1px; height: 32px; background: rgba(255,255,255,0.2);"></div>
 
-                            <!-- Nút Quay Phim (Icon Only) -->
-                            <button class="btn-record @(isRecording ? "recording pulse-ring" : "")" @onclick="ToggleRecording" title="@(isRecording ? "Dừng ghi" : "Ghi hình ca khám")">
+                            <!-- Nút Quay Phim (Không còn phím tắt) -->
+                            <button class="btn-record @(isRecording ? "recording pulse-ring" : "")" @onclick="ToggleRecording" title="@(isRecording ? "Dừng ghi" : "Ghi hình")">
                                 <div class="btn-record-inner"></div>
                             </button>
 
@@ -191,12 +201,10 @@
                                             <div class="position-absolute top-0 start-0 m-1 px-2 py-1 bg-danger bg-opacity-75 rounded-2 text-white" style="font-size: 0.65rem; font-weight: bold;">VID</div>
                                         }
                                         
-                                        <!-- Nút download -->
                                         <div class="position-absolute top-0 end-0 m-1">
                                             <a href="@item.Url" download="@item.Filename" class="btn btn-sm btn-dark rounded-circle bg-opacity-75 border-0 d-flex align-items-center justify-content-center" style="width: 28px; height: 28px;" title="Tải về máy"><i class="bi bi-download" style="font-size: 0.8rem"></i></a>
                                         </div>
 
-                                        <!-- Trạng thái Upload -->
                                         <div class="position-absolute bottom-0 end-0 m-1 p-1 rounded-circle bg-dark bg-opacity-50 d-flex align-items-center justify-content-center cursor-pointer" style="width: 24px; height: 24px;" title="@GetStatusTitle(item)" @onclick="() => RetryUpload(item)">
                                             @if (item.IsUploading)
                                             {
@@ -256,11 +264,16 @@
     [SupplyParameterFromQuery] public string? PatientId { get; set; }
     [SupplyParameterFromQuery] public string? PatientName { get; set; }
     [SupplyParameterFromQuery] public string? PatientCode { get; set; }
+    // CẬP NHẬT: Nhận tên dịch vụ từ URL
+    [SupplyParameterFromQuery] public string? ServiceName { get; set; }
 
     private string? _displayPatientName;
     private string? _displayPatientCode;
+    private string? _displayServiceName;
 
     private IJSObjectReference? module;
+    private DotNetObjectReference<Camera>? objRef;
+    
     private bool isCameraRunning = false;
     private bool isRecording = false;
     private bool isDarkMode = true;
@@ -288,6 +301,8 @@
             _displayPatientName = PatientName;
             _displayPatientCode = PatientCode;
         }
+        // Gán tên dịch vụ để hiển thị
+        _displayServiceName = ServiceName;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -303,12 +318,27 @@
                 await LoadVideoDevices();
                 await LoadConfig();
                 await StartCamera();
+                
+                objRef = DotNetObjectReference.Create(this);
+                await module.InvokeVoidAsync("registerShortcuts", objRef);
+
                 StateHasChanged();
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Error initializing camera: {ex.Message}");
             }
+        }
+    }
+
+    // --- JS INVOKABLE METHODS ---
+    [JSInvokable]
+    public async Task TriggerCapture()
+    {
+        if (isCameraRunning)
+        {
+            await CaptureFrame();
+            await InvokeAsync(StateHasChanged);
         }
     }
 
@@ -347,12 +377,11 @@
         return "Lỗi lưu file - Nhấn để thử lại";
     }
 
-    // --- CẬP NHẬT: Chủ động tắt camera trước khi chuyển trang ---
+    // --- Actions ---
+
     private async Task BackToWorklist()
     {
-        // 1. Tắt camera trước
-        await StopCamera(); 
-        // 2. Mới chuyển trang
+        await StopCamera();
         NavManager.NavigateTo("/worklist");
     }
 
@@ -371,9 +400,7 @@
 
         if (capturedItems.All(x => x.IsUploaded))
         {
-            // 1. Tắt camera trước
             await StopCamera();
-            // 2. Mới chuyển trang
             NavManager.NavigateTo("/worklist");
         }
     }
@@ -448,16 +475,17 @@
         }
     }
 
-    // Tự động ngắt kết nối và dọn dẹp khi rời trang
     public async ValueTask DisposeAsync()
     {
         try 
         {
             if (module is not null)
             {
+                await module.InvokeVoidAsync("unregisterShortcuts");
                 await module.InvokeVoidAsync("stopCamera", "videoFeed");
                 await module.DisposeAsync();
             }
+            objRef?.Dispose();
         }
         catch (Exception ex)
         {

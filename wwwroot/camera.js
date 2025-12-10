@@ -1,6 +1,7 @@
 ﻿let videoStream = null;
 let mediaRecorder = null;
 let recordedChunks = [];
+let dotNetHelperRef = null;
 
 // --- Theme & Settings Logic ---
 export function setTheme(theme) {
@@ -21,12 +22,32 @@ export function getSavedSettings() {
     return settings ? JSON.parse(settings) : null;
 }
 
+// --- Keyboard Shortcuts Logic ---
+function handleKeyboardEvent(event) {
+    if (!dotNetHelperRef) return;
+
+    // Chỉ giữ lại phím Space để chụp ảnh
+    if (event.code === 'Space' && event.target.tagName !== 'INPUT' && event.target.tagName !== 'TEXTAREA') {
+        event.preventDefault(); // Ngăn cuộn trang
+        dotNetHelperRef.invokeMethodAsync('TriggerCapture');
+    }
+}
+
+export function registerShortcuts(dotNetHelper) {
+    dotNetHelperRef = dotNetHelper;
+    window.addEventListener('keydown', handleKeyboardEvent);
+}
+
+export function unregisterShortcuts() {
+    window.removeEventListener('keydown', handleKeyboardEvent);
+    dotNetHelperRef = null;
+}
+
 // --- Camera Logic ---
 export async function startCamera(videoElementId, deviceId, width, height, frameRate) {
     const video = document.getElementById(videoElementId);
     if (!video) return;
 
-    // Đảm bảo tắt stream cũ nếu có
     if (videoStream) {
         videoStream.getTracks().forEach(track => track.stop());
     }
@@ -43,7 +64,7 @@ export async function startCamera(videoElementId, deviceId, width, height, frame
 
     try {
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
-        videoStream = stream; // Lưu stream vào biến toàn cục
+        videoStream = stream;
         video.srcObject = stream;
     } catch (err) {
         console.error("Lỗi truy cập camera: ", err);
@@ -60,27 +81,19 @@ export async function startCamera(videoElementId, deviceId, width, height, frame
     }
 }
 
-// CẬP NHẬT QUAN TRỌNG: Tắt camera từ biến toàn cục videoStream
-// Giúp tắt camera thành công ngay cả khi thẻ Video trên giao diện đã bị xóa
 export function stopCamera(videoElementId) {
-    // 1. Ưu tiên tắt từ biến lưu trữ stream (Luôn hoạt động)
+    // 1. Tắt stream từ biến toàn cục
     if (videoStream) {
         try {
-            const tracks = videoStream.getTracks();
-            tracks.forEach(track => track.stop());
-            console.log("Camera stream stopped via variable.");
-        } catch (e) {
-            console.error("Error stopping tracks:", e);
-        }
+            videoStream.getTracks().forEach(track => track.stop());
+        } catch (e) {}
         videoStream = null;
     }
 
-    // 2. Xóa srcObject trên thẻ video (nếu thẻ vẫn còn trên DOM)
+    // 2. Dọn dẹp thẻ video
     if (videoElementId) {
         const video = document.getElementById(videoElementId);
-        if (video) {
-            video.srcObject = null;
-        }
+        if (video) video.srcObject = null;
     }
 }
 
@@ -117,32 +130,19 @@ export async function getVideoDevices() {
 
 export function startRecording(videoElementId) {
     const video = document.getElementById(videoElementId);
-    // Nếu không tìm thấy video element (do chuyển trang), thử dùng stream toàn cục
     const stream = video ? video.srcObject : videoStream;
-    
     if (!stream) return false;
-
+    
     recordedChunks = [];
     try {
         let mimeType = 'video/webm';
-        if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
-            mimeType = 'video/webm;codecs=vp9';
-        } else if (MediaRecorder.isTypeSupported('video/webm')) {
-            mimeType = 'video/webm';
-        } else if (MediaRecorder.isTypeSupported('video/mp4')) {
-            mimeType = 'video/mp4';
-        }
+        if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) mimeType = 'video/webm;codecs=vp9';
+        else if (MediaRecorder.isTypeSupported('video/mp4')) mimeType = 'video/mp4';
 
-        const options = { 
-            mimeType: mimeType,
-            videoBitsPerSecond: 2500000 
-        };
-        
+        const options = { mimeType: mimeType, videoBitsPerSecond: 2500000 };
         mediaRecorder = new MediaRecorder(stream, options);
         mediaRecorder.ondataavailable = (event) => {
-            if (event.data.size > 0) {
-                recordedChunks.push(event.data);
-            }
+            if (event.data.size > 0) recordedChunks.push(event.data);
         };
         mediaRecorder.start();
         return true;
@@ -179,7 +179,6 @@ export async function uploadMedia(fileUrl, fileName, apiUrl) {
             method: "POST",
             body: formData
         });
-
         return uploadRes.ok;
     } catch (error) {
         console.error("Lỗi upload:", error);
