@@ -155,7 +155,7 @@
         <div class="col-lg-3 h-100 d-flex flex-column">
             <div class="bg-surface rounded-box h-100 p-3 d-flex flex-column" style="background-color: var(--bg-surface);">
                 
-                <!-- 1. Header Sidebar: Thêm flex-shrink-0 -->
+                <!-- 1. Header Sidebar -->
                 <div class="d-flex justify-content-between align-items-center mb-3 ps-1 flex-shrink-0">
                     <h6 class="fw-bold text-uppercase text-muted small mb-0">
                         @if(!string.IsNullOrEmpty(_displayPatientName)) { <span>Dữ liệu ca khám</span> } else { <span>Thư viện tạm</span> }
@@ -163,7 +163,7 @@
                     <span class="badge bg-primary bg-opacity-10 text-primary rounded-pill">@capturedItems.Count</span>
                 </div>
                 
-                <!-- 2. Danh sách cuộn: Thêm min-height: 0 -->
+                <!-- 2. Danh sách cuộn -->
                 <div class="flex-grow-1 overflow-auto pe-2 custom-scrollbar" style="min-height: 0;">
                      @if (capturedItems.Count == 0)
                     {
@@ -190,8 +190,25 @@
                                             <div class="position-absolute top-0 start-0 m-1 px-2 py-1 bg-danger bg-opacity-75 rounded-2 text-white" style="font-size: 0.65rem; font-weight: bold;">VID</div>
                                         }
                                         
+                                        <!-- Nút download -->
                                         <div class="position-absolute top-0 end-0 m-1">
-                                            <a href="@item.Url" download="@item.Filename" class="btn btn-sm btn-dark rounded-circle bg-opacity-75 border-0 d-flex align-items-center justify-content-center" style="width: 28px; height: 28px;"><i class="bi bi-download" style="font-size: 0.8rem"></i></a>
+                                            <a href="@item.Url" download="@item.Filename" class="btn btn-sm btn-dark rounded-circle bg-opacity-75 border-0 d-flex align-items-center justify-content-center" style="width: 28px; height: 28px;" title="Tải về máy"><i class="bi bi-download" style="font-size: 0.8rem"></i></a>
+                                        </div>
+
+                                        <!-- Trạng thái Upload -->
+                                        <div class="position-absolute bottom-0 end-0 m-1 p-1 rounded-circle bg-dark bg-opacity-50 d-flex align-items-center justify-content-center cursor-pointer" style="width: 24px; height: 24px;" title="@GetStatusTitle(item)" @onclick="() => RetryUpload(item)">
+                                            @if (item.IsUploading)
+                                            {
+                                                <div class="spinner-border spinner-border-sm text-light" role="status" style="width: 0.8rem; height: 0.8rem;"></div>
+                                            }
+                                            else if (item.IsUploaded)
+                                            {
+                                                <i class="bi bi-check-circle-fill text-success" style="font-size: 0.9rem;"></i>
+                                            }
+                                            else
+                                            {
+                                                <i class="bi bi-exclamation-circle-fill text-danger" style="font-size: 0.9rem;"></i>
+                                            }
                                         </div>
                                     </div>
                                     <small class="text-muted mt-1 ms-1 d-block text-truncate" style="font-size: 0.75rem">
@@ -203,15 +220,15 @@
                     }
                 </div>
                 
-                <!-- 3. Footer Button: Thêm flex-shrink-0 để không bị co lại -->
+                <!-- 3. Footer Button -->
                 @if (capturedItems.Count > 0 && !string.IsNullOrEmpty(_displayPatientName))
                 {
                     <div class="mt-3 flex-shrink-0">
-                        <button class="btn btn-gemini w-100" @onclick="FinishExam" disabled="@isUploading">
-                            @if (isUploading)
+                        <button class="btn btn-gemini w-100" @onclick="FinishExam" disabled="@(capturedItems.Any(x => x.IsUploading) || isGlobalUploading)">
+                            @if (capturedItems.Any(x => x.IsUploading) || isGlobalUploading)
                             {
                                 <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                                <span>Đang lưu dữ liệu...</span>
+                                <span>Đang đồng bộ...</span>
                             }
                             else
                             {
@@ -231,6 +248,7 @@
     @@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
     @@keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     .object-fit-contain { object-fit: contain; background-color: black; }
+    .cursor-pointer { cursor: pointer; }
 </style>
 
 @code {
@@ -245,13 +263,16 @@
     private bool isCameraRunning = false;
     private bool isRecording = false;
     private bool isDarkMode = true;
-    private bool isUploading = false;
+    private bool isGlobalUploading = false; // Dùng cho trạng thái xử lý cuối cùng
 
     public class MediaItem {
         public string Type { get; set; } = "image";
         public string Url { get; set; } = "";
         public string Filename { get; set; } = "";
         public DateTime Timestamp { get; set; }
+        // Trạng thái Upload Realtime
+        public bool IsUploading { get; set; } = false;
+        public bool IsUploaded { get; set; } = false;
     }
     private List<MediaItem> capturedItems = new();
 
@@ -273,76 +294,160 @@
     {
         if (firstRender)
         {
-            module = await JSRuntime.InvokeAsync<IJSObjectReference>("import", "./camera.js");
-            var savedTheme = await module.InvokeAsync<string>("getSavedTheme");
-            isDarkMode = savedTheme == "dark";
-            await ApplyTheme();
-            await LoadVideoDevices();
-            await LoadConfig();
-            await StartCamera();
-            StateHasChanged();
+            try
+            {
+                module = await JSRuntime.InvokeAsync<IJSObjectReference>("import", "./camera.js");
+                var savedTheme = await module.InvokeAsync<string>("getSavedTheme");
+                isDarkMode = savedTheme == "dark";
+                await ApplyTheme();
+                await LoadVideoDevices();
+                await LoadConfig();
+                await StartCamera();
+                StateHasChanged();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error initializing camera: {ex.Message}");
+            }
         }
     }
 
+    // --- Helper Upload Realtime ---
+    private async Task UploadItemImmediately(MediaItem item)
+    {
+        if (module is null) return;
+
+        item.IsUploading = true;
+        await InvokeAsync(StateHasChanged); // Update UI ngay để hiện spinner
+
+        try
+        {
+            // Gọi hàm JS uploadMedia đã có sẵn logic FormData
+            var success = await module.InvokeAsync<bool>(
+                "uploadMedia",
+                item.Url,
+                item.Filename,
+                "api/Video/append" 
+            );
+
+            item.IsUploaded = success;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Lỗi upload {item.Filename}: {ex.Message}");
+            item.IsUploaded = false;
+        }
+        finally
+        {
+            item.IsUploading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task RetryUpload(MediaItem item)
+    {
+        if (!item.IsUploaded && !item.IsUploading)
+        {
+            await UploadItemImmediately(item);
+        }
+    }
+
+    private string GetStatusTitle(MediaItem item)
+    {
+        if (item.IsUploading) return "Đang lưu lên máy chủ...";
+        if (item.IsUploaded) return "Đã lưu an toàn";
+        return "Lỗi lưu file - Nhấn để thử lại";
+    }
+
+    // --- Actions ---
+
     private void BackToWorklist() => NavManager.NavigateTo("/worklist");
+
     private async Task FinishExam()
     {
-        // Nếu không có ảnh/video nào thì về luôn
-        if (capturedItems.Count == 0)
+        // Kiểm tra xem có file nào bị lỗi chưa upload được không
+        var failedItems = capturedItems.Where(x => !x.IsUploaded && !x.IsUploading).ToList();
+
+        if (failedItems.Any())
+        {
+            isGlobalUploading = true;
+            StateHasChanged();
+            
+            // Cố gắng upload lại các file lỗi lần cuối
+            foreach (var item in failedItems)
+            {
+                await UploadItemImmediately(item);
+            }
+            
+            isGlobalUploading = false;
+            StateHasChanged();
+        }
+
+        // Nếu tất cả đã ổn (hoặc chấp nhận rủi ro nếu vẫn lỗi sau khi retry), quay về
+        if (capturedItems.All(x => x.IsUploaded))
         {
             NavManager.NavigateTo("/worklist");
-            return;
         }
-
-        // Bắt đầu quá trình lưu
-        isUploading = true;
-        StateHasChanged(); // Cập nhật giao diện để hiện loading
-
-        if (module is not null)
+        else
         {
-            foreach (var item in capturedItems)
-            {
-                // Gọi hàm JS để upload file lên controller
-                // Endpoint là "api/Video/append" khớp với VideoController.cs
-                var success = await module.InvokeAsync<bool>(
-                    "uploadMedia", 
-                    item.Url, 
-                    item.Filename, 
-                    "api/Video/append" 
-                );
-
-                if (!success)
-                {
-                    // Tùy chọn: Xử lý lỗi nếu muốn (ví dụ: hiện thông báo)
-                    Console.WriteLine($"Lỗi khi lưu file: {item.Filename}");
-                }
-            }
+            // Có thể hiện thông báo: "Còn file chưa lưu được, bạn có chắc muốn thoát?"
+            // Hiện tại code sẽ giữ người dùng ở lại để họ thấy file lỗi.
+            // Để đơn giản, ta cho phép thoát luôn hoặc giữ lại tùy policy.
+            // Ở đây tôi chọn giữ lại để user biết file nào lỗi.
         }
-
-        isUploading = false;
-        
-        // Lưu xong thì mới chuyển trang
-        NavManager.NavigateTo("/worklist");
     }
 
     private async Task CaptureFrame()
     {
         if (module is not null) 
         {
-            var base64 = await module.InvokeAsync<string>("takePicture", "videoFeed");
-            capturedItems.Add(new MediaItem { Type = "image", Url = base64, Timestamp = DateTime.Now, Filename = $"IMG_{DateTime.Now:yyyyMMdd_HHmmss}.png" });
+            try {
+                // Lấy Blob URL từ JS (nhanh hơn Base64)
+                var url = await module.InvokeAsync<string>("takePicture", "videoFeed");
+                
+                var newItem = new MediaItem { 
+                    Type = "image", 
+                    Url = url, 
+                    Timestamp = DateTime.Now, 
+                    Filename = $"IMG_{DateTime.Now:yyyyMMdd_HHmmss}.png" 
+                };
+                
+                capturedItems.Add(newItem);
+                
+                // Kích hoạt upload ngay lập tức (Fire and forget task để không block UI)
+                _ = UploadItemImmediately(newItem);
+            } catch (Exception ex) {
+                Console.WriteLine($"Capture error: {ex.Message}");
+            }
         }
     }
 
     private async Task ToggleRecording() { if (isRecording) await StopRecording(); else await StartRecording(); }
     private async Task StartRecording() { if (module is not null && await module.InvokeAsync<bool>("startRecording", "videoFeed")) isRecording = true; }
+    
     private async Task StopRecording() 
     {
         if (module is not null) 
         { 
-            var url = await module.InvokeAsync<string>("stopRecording"); 
-            isRecording = false;
-            capturedItems.Add(new MediaItem { Type = "video", Url = url, Timestamp = DateTime.Now, Filename = $"VID_{DateTime.Now:yyyyMMdd_HHmmss}.webm" });
+            try {
+                var url = await module.InvokeAsync<string>("stopRecording"); 
+                isRecording = false;
+                
+                var newItem = new MediaItem { 
+                    Type = "video", 
+                    Url = url, 
+                    Timestamp = DateTime.Now, 
+                    Filename = $"VID_{DateTime.Now:yyyyMMdd_HHmmss}.webm" 
+                };
+                
+                capturedItems.Add(newItem);
+
+                // Kích hoạt upload ngay lập tức
+                _ = UploadItemImmediately(newItem);
+            } catch (Exception ex) {
+                 Console.WriteLine($"Recording stop error: {ex.Message}");
+                 isRecording = false;
+            }
         }
     }
     

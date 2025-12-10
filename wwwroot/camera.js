@@ -73,14 +73,23 @@ export function stopCamera(videoElementId) {
     }
 }
 
+// CẬP NHẬT: Trả về Blob URL thay vì Base64 để tối ưu hiệu năng và upload
 export async function takePicture(videoElementId) {
     const video = document.getElementById(videoElementId);
-    const canvas = document.createElement("canvas");
     if (video) {
+        const canvas = document.createElement("canvas");
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
-        return canvas.toDataURL("image/png");
+        
+        return new Promise((resolve) => {
+            // Chuyển canvas thành Blob (dạng file ảnh PNG)
+            canvas.toBlob((blob) => {
+                // Tạo URL tạm thời cho Blob này
+                const url = URL.createObjectURL(blob);
+                resolve(url);
+            }, "image/png");
+        });
     }
     return null;
 }

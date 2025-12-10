@@ -363,3 +363,5 @@ MigrationBackup/
 FodyWeavers.xsd
 /ffmpeg
 /wwwroot/uploads
+Components/Pages/Camera.razor
+.DS_Store
