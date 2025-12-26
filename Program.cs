@@ -1,6 +1,11 @@
 ﻿using CameraApp.Components;
 using CameraApp.Services;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
+using System.Security.Cryptography.X509Certificates;
 using Xabe.FFmpeg.Downloader;
+
+
+var kestrelCertPassword = Environment.GetEnvironmentVariable("__KESTREL_CERT_PASSWORD__", EnvironmentVariableTarget.Machine);
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,6 +23,29 @@ builder.Services.AddRazorComponents()
 // Đăng ký HIS Service
 builder.Services.AddSingleton<HisService>();
 
+builder.WebHost.ConfigureKestrel(serverOptions =>
+{
+    var certConfig = builder.Configuration.GetSection("Kestrel:Certificate");
+    var certPath = certConfig["Path"];
+
+    if (string.IsNullOrEmpty(certPath) || string.IsNullOrEmpty(kestrelCertPassword))
+    {
+        Console.WriteLine("Kestrel certificate path or password is not configured. HTTPS will not be available.");
+        return;
+    }
+
+    serverOptions.ConfigureHttpsDefaults(https =>
+    {
+        https.ServerCertificate = X509CertificateLoader.LoadPkcs12FromFile(certPath, kestrelCertPassword);
+    });
+
+    serverOptions.ListenAnyIP(7274, listenOptions =>
+    {
+        listenOptions.Protocols = HttpProtocols.Http1AndHttp2AndHttp3;
+        listenOptions.UseHttps();
+    });
+});
+
 string ffmpegPath = Path.Combine(Directory.GetCurrentDirectory(), "ffmpeg");
 if (!Directory.Exists(ffmpegPath))
 {
@@ -32,6 +60,8 @@ Xabe.FFmpeg.FFmpeg.SetExecutablesPath(ffmpegPath);
 
 var app = builder.Build();
 
+// app.UsePathBase("/capture");
+
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
 {
@@ -45,8 +75,6 @@ app.UseHttpsRedirection();
 app.UseAntiforgery();
 
 app.MapStaticAssets();
-
-app.MapControllers();
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();

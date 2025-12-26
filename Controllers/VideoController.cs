@@ -8,7 +8,7 @@ namespace CameraApp.Controllers
     {
         private readonly string _uploadPath;
         // Danh sách đuôi file cho phép
-        private readonly string[] _allowedExtensions = { ".jpg", ".jpeg", ".png", ".webm", ".mp4" };
+        private readonly string[] _allowedExtensions = [".jpg", ".jpeg", ".png", ".webm", ".mp4"];
 
         public VideoController(IWebHostEnvironment env)
         {
@@ -26,13 +26,13 @@ namespace CameraApp.Controllers
             // 1. Sanitize (Bảo mật tên file)
             var safeFileName = Path.GetFileName(fileName);
             var ext = Path.GetExtension(safeFileName).ToLowerInvariant();
-            
+
             if (!_allowedExtensions.Contains(ext))
                 return BadRequest("Invalid extension");
 
             var filePath = Path.Combine(_uploadPath, safeFileName);
 
-            try 
+            try
             {
                 // Dùng FileShare.Write để tránh lock nếu request đến quá dồn dập
                 // FileMode.Append: Tự tạo mới nếu chưa có, nối đuôi nếu đã có
