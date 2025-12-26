@@ -17,7 +17,7 @@
         </div>
         <div class="d-flex gap-3 align-items-center">
             <!-- File System Access Buttons -->
-            <button class="btn btn-outline-primary rounded-pill px-3" @onclick="SelectDirectory" title="Chọn thư mục lưu file">
+            <button class="btn btn-outline-primary rounded-pill px-3 btn-50" @onclick="SelectDirectory" title="Chọn thư mục lưu file">
                 <i class="bi bi-folder-plus me-2"></i>
                 @if (isDirectorySelected)
                 {
@@ -28,7 +28,7 @@
                     <span>Chọn nơi lưu</span>
                 }
             </button>
-            <button class="btn btn-outline-secondary rounded-pill px-3" @onclick="SaveTestFile" disabled="@(!isDirectorySelected)">
+            <button class="btn btn-outline-secondary rounded-pill px-3 btn-50" @onclick="SaveTestFile" disabled="@(!isDirectorySelected)">
                 <i class="bi bi-download me-2"></i>
                 Lưu file test
             </button>

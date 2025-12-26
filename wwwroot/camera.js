@@ -97,13 +97,22 @@ export async function getVideoDevices() {
 
 // --- NEW LOCAL SAVING LOGIC ---
 
+function getFormattedDate() {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = (d.getMonth() + 1).toString().padStart(2, '0');
+    const day = d.getDate().toString().padStart(2, '0');
+    return `${year}${month}${day}`;
+}
+
 /**
  * Takes a picture, saves it locally, and returns a blob URL for display.
  * @param {string} videoElementId The ID of the video element.
  * @param {string} fileName The desired file name for the saved image.
+ * @param {string} patientCode The patient's code for creating the directory.
  * @returns {Promise<string>} A promise that resolves with the blob URL of the image.
  */
-export async function takePictureAndSave(videoElementId, fileName) {
+export async function takePictureAndSave(videoElementId, fileName, patientCode) {
     return new Promise((resolve) => {
         const video = document.getElementById(videoElementId);
         if (!video) {
@@ -118,7 +127,9 @@ export async function takePictureAndSave(videoElementId, fileName) {
 
         canvas.toBlob(async (blob) => {
             if (blob) {
-                await saveFile(fileName, blob);
+                const date = getFormattedDate();
+                const filePath = `${date}/${patientCode}/${fileName}`;
+                await saveFile(filePath, blob);
                 resolve(URL.createObjectURL(blob));
             } else {
                 resolve(null);
@@ -156,9 +167,10 @@ export function startRecordingLocal(videoElementId) {
 /**
  * Stops local recording, saves the video, and returns a blob URL for display.
  * @param {string} fileName The desired file name for the saved video.
+ * @param {string} patientCode The patient's code for creating the directory.
  * @returns {Promise<string>} A promise that resolves with the blob URL of the video.
  */
-export async function stopRecordingAndSaveLocal(fileName) {
+export async function stopRecordingAndSaveLocal(fileName, patientCode) {
     return new Promise((resolve) => {
         if (!localMediaRecorder || localMediaRecorder.state === "inactive") {
             resolve(null);
@@ -167,7 +179,9 @@ export async function stopRecordingAndSaveLocal(fileName) {
 
         localMediaRecorder.onstop = async () => {
             const completeBlob = new Blob(recordedChunks, { type: localMediaRecorder.mimeType });
-            await saveFile(fileName, completeBlob);
+            const date = getFormattedDate();
+            const filePath = `${date}/${patientCode}/${fileName}`;
+            await saveFile(filePath, completeBlob);
             recordedChunks = [];
             resolve(URL.createObjectURL(completeBlob));
         };

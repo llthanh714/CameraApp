@@ -216,16 +216,15 @@
                                         </div>
 
                                         <div class="position-absolute bottom-0 end-0 m-1 p-1 rounded-circle bg-dark bg-opacity-50 d-flex align-items-center justify-content-center" style="width: 24px; height: 24px;">
-                                            @if (item.IsUploading)
-                                            {
-                                                <div class="spinner-border spinner-border-sm text-light" role="status" style="width: 0.8rem; height: 0.8rem;"></div>
-                                            }
-                                            else if (item.IsUploaded)
-                                            {
-                                                <i class="bi bi-hdd-fill text-primary" title="Đã lưu vào thư mục đã chọn"></i>
-                                            }
-                                        </div>
-                                    </div>
+                                        @if (item.IsUploading)
+                                        {
+                                        <div class="spinner-border spinner-border-sm text-light" role="status" style="width: 0.8rem; height: 0.8rem;"></div>
+                                        }
+                                        else if (item.IsUploaded)
+                                        {
+                                        <i class="bi bi-hdd-fill text-white" title="Đã lưu vào thư mục đã chọn"></i>
+                                        }
+                                        </div>                                    </div>
                                     <small class="text-muted mt-1 ms-1 d-block text-truncate" style="font-size: 0.75rem">
                                         <i class="bi bi-clock me-1"></i>@item.Timestamp.ToString("HH:mm:ss")
                                     </small>
@@ -284,9 +283,6 @@
     private bool isRecording = false;
     private bool isDarkMode = true;
     private bool isGlobalUploading = false;
-    
-    // Lưu tên file video hiện tại đang quay để xử lý khi kết thúc
-    private string? currentRecordingFileName;
 
     public class MediaItem {
         public string Type { get; set; } = "image";

@@ -140,6 +140,10 @@ body {
         opacity: 0.95;
     }
 
+.btn-50 {
+    height: 50px;
+}
+
 /* Table overrides */
 .table {
     --bs-table-bg: transparent;
