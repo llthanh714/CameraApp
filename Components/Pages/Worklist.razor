@@ -4,6 +4,7 @@
 @using CameraApp.Services
 @inject HisService HisService
 @inject NavigationManager NavManager
+@inject IJSRuntime JSRuntime
 
 <PageTitle>Danh sách chờ Siêu âm</PageTitle>
 
@@ -15,6 +16,23 @@
             <small class="text-muted">Phòng Siêu âm 01 - Kết nối HIS: <span class="text-success">Online</span></small>
         </div>
         <div class="d-flex gap-3 align-items-center">
+            <!-- File System Access Buttons -->
+            <button class="btn btn-outline-primary rounded-pill px-3" @onclick="SelectDirectory" title="Chọn thư mục lưu file">
+                <i class="bi bi-folder-plus me-2"></i>
+                @if (isDirectorySelected)
+                {
+                    <span class="text-success">Đã chọn thư mục</span>
+                }
+                else
+                {
+                    <span>Chọn nơi lưu</span>
+                }
+            </button>
+            <button class="btn btn-outline-secondary rounded-pill px-3" @onclick="SaveTestFile" disabled="@(!isDirectorySelected)">
+                <i class="bi bi-download me-2"></i>
+                Lưu file test
+            </button>
+
             <!-- Search Box -->
             <div class="control-pill" style="width: 320px;">
                 <i class="bi bi-search"></i>
@@ -106,6 +124,8 @@
 @code {
     private List<Patient> patients = new();
     private string searchTerm = "";
+    private IJSObjectReference? module;
+    private bool isDirectorySelected = false;
 
     private IEnumerable<Patient> filteredPatients =>
         string.IsNullOrWhiteSpace(searchTerm)
@@ -117,6 +137,34 @@
     protected override async Task OnInitializedAsync()
     {
         await LoadData();
+    }
+    
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Load the JavaScript module
+            module = await JSRuntime.InvokeAsync<IJSObjectReference>("import", "./fileSystemAccess.js");
+        }
+    }
+
+    private async Task SelectDirectory()
+    {
+        if (module is not null)
+        {
+            isDirectorySelected = await module.InvokeAsync<bool>("selectDirectory");
+            StateHasChanged();
+        }
+    }
+
+    private async Task SaveTestFile()
+    {
+        if (module is not null && isDirectorySelected)
+        {
+            var fileName = $"test_{DateTime.Now:yyyyMMdd_HHmmss}.txt";
+            var content = "Đây là nội dung file test từ ứng dụng Blazor.";
+            await module.InvokeVoidAsync("saveFile", fileName, content);
+        }
     }
 
     private async Task LoadData()

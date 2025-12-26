@@ -1,4 +1,4 @@
-﻿@page "/camera"
+@page "/camera"
 @rendermode InteractiveServer
 @inject IJSRuntime JSRuntime
 @inject NavigationManager NavManager
@@ -205,8 +205,7 @@
                                         }
                                         else
                                         {
-                                            <!-- Video src bây giờ trỏ thẳng vào uploads/ trên server -->
-                                            <video src="@item.Url" controls class="w-100 rounded-3 shadow-sm border border-light border-opacity-10"></video>
+                                            <video src="@item.Url" autoplay loop muted class="w-100 rounded-3 shadow-sm border border-light border-opacity-10"></video>
                                             <div class="position-absolute top-0 start-0 m-1 px-2 py-1 bg-danger bg-opacity-75 rounded-2 text-white" style="font-size: 0.65rem; font-weight: bold;">VID</div>
                                         }
                                         
@@ -223,7 +222,7 @@
                                             }
                                             else if (item.IsUploaded)
                                             {
-                                                <i class="bi bi-cloud-check-fill text-success" title="Đã lưu trên Server"></i>
+                                                <i class="bi bi-hdd-fill text-primary" title="Đã lưu vào thư mục đã chọn"></i>
                                             }
                                         </div>
                                     </div>
@@ -320,7 +319,10 @@
         {
             try
             {
+                // QUAN TRỌNG: Import cả 2 module JS
+                await JSRuntime.InvokeAsync<IJSObjectReference>("import", "./fileSystemAccess.js");
                 module = await JSRuntime.InvokeAsync<IJSObjectReference>("import", "./camera.js");
+
                 var savedTheme = await module.InvokeAsync<string>("getSavedTheme");
                 isDarkMode = savedTheme == "dark";
                 await ApplyTheme();
@@ -351,6 +353,8 @@
         }
     }
 
+    /* 
+    // CÁC HÀM UPLOAD CŨ - TẠM THỜI VÔ HIỆU HÓA
     private async Task UploadItemImmediately(MediaItem item)
     {
         if (module is null) return;
@@ -358,7 +362,6 @@
         await InvokeAsync(StateHasChanged);
         try
         {
-            // Chỉ dùng cho Ảnh. Video được upload luồng riêng.
             var success = await module.InvokeAsync<bool>("uploadMedia", item.Url, item.Filename, "api/Video/append");
             item.IsUploaded = success;
         }
@@ -374,32 +377,8 @@
         }
     }
 
-    private async Task RetryUpload(MediaItem item)
-    {
-        // Video stream thì mặc định đã ở server rồi, không cần retry kiểu này trừ khi logic phức tạp hơn
-        if (item.Type == "image" && !item.IsUploaded && !item.IsUploading) await UploadItemImmediately(item);
-    }
-
-    private async Task DeleteItem(MediaItem item)
-    {
-        if (module is not null && item.Type == "image")
-        {
-            await module.InvokeVoidAsync("revokeUrl", item.Url);
-        }
-        // TODO: Nếu là Video, có thể gọi API xóa file trên server nếu muốn dọn dẹp triệt để
-        capturedItems.Remove(item);
-        StateHasChanged();
-    }
-
-    private async Task BackToWorklist()
-    {
-        await CleanupResources();
-        NavManager.NavigateTo("/worklist");
-    }
-
     private async Task FinishExam()
     {
-        // Chỉ còn ảnh có thể bị lỗi upload, video thì upload real-time rồi
         var failedItems = capturedItems.Where(x => x.Type == "image" && !x.IsUploaded && !x.IsUploading).ToList();
 
         if (failedItems.Any())
@@ -417,20 +396,61 @@
             NavManager.NavigateTo("/worklist");
         }
     }
+    */
+
+    private async Task DeleteItem(MediaItem item)
+    {
+        // Giờ tất cả Url đều là blob url, cần được thu hồi để tránh memory leak
+        if (module is not null)
+        {
+            await module.InvokeVoidAsync("revokeUrl", item.Url);
+        }
+        capturedItems.Remove(item);
+        StateHasChanged();
+    }
+
+    private async Task BackToWorklist()
+    {
+        await CleanupResources();
+        NavManager.NavigateTo("/worklist");
+    }
+
+    private async Task FinishExam()
+    {
+        // Logic này giờ chỉ cần điều hướng về, vì file đã được lưu real-time
+        await CleanupResources();
+        NavManager.NavigateTo("/worklist");
+    }
+
 
     private async Task CaptureFrame()
     {
         if (module is not null) 
         {
             try {
-                var url = await module.InvokeAsync<string>("takePicture", "videoFeed");
-                if (string.IsNullOrEmpty(url)) return;
+                // Tạo tên file trước
+                var fileName = $"IMG_{_displayPatientCode ?? "NA"}_{DateTime.Now:yyyyMMdd_HHmmss}.jpg";
+                
+                // Gọi hàm JS mới, hàm này vừa LƯU FILE vừa trả về URL để hiển thị
+                var url = await module.InvokeAsync<string>("takePictureAndSave", "videoFeed", fileName);
+                
+                if (string.IsNullOrEmpty(url)) 
+                {
+                    ShowError("Không thể lưu ảnh. Hãy chắc chắn bạn đã chọn thư mục lưu ở trang danh sách.");
+                    return;
+                }
 
-                var uniqueName = $"IMG_{DateTime.Now:yyyyMMdd_HHmmss}_{Guid.NewGuid().ToString().Substring(0, 8)}.jpg";
-                var newItem = new MediaItem { Type = "image", Url = url, Timestamp = DateTime.Now, Filename = uniqueName };
+                var newItem = new MediaItem 
+                { 
+                    Type = "image", 
+                    Url = url, 
+                    Timestamp = DateTime.Now, 
+                    Filename = fileName,
+                    IsUploaded = true // Dùng cờ này để đánh dấu "Đã lưu cục bộ"
+                };
                 
                 capturedItems.Add(newItem);
-                _ = UploadItemImmediately(newItem);
+                StateHasChanged(); // Cập nhật UI ngay lập tức
             } catch (Exception ex) { ShowError($"Lỗi chụp ảnh: {ex.Message}"); }
         }
     }
@@ -441,11 +461,8 @@
     { 
         if (module is not null) 
         {
-            // 1. Tạo tên file TRƯỚC khi quay
-            currentRecordingFileName = $"VID_{DateTime.Now:yyyyMMdd_HHmmss}_{Guid.NewGuid().ToString().Substring(0, 8)}.webm";
-            
-            // 2. Gọi hàm JS mới: startRecordingStream
-            var success = await module.InvokeAsync<bool>("startRecordingStream", "videoFeed", currentRecordingFileName, "api/Video/append");
+            // Gọi hàm JS để bắt đầu quay, không cần tham số upload
+            var success = await module.InvokeAsync<bool>("startRecordingLocal", "videoFeed");
             
             if (success) 
             {
@@ -453,36 +470,39 @@
             }
             else 
             {
-                ShowError("Không thể bắt đầu ghi hình.");
+                ShowError("Không thể bắt đầu ghi hình. Hãy chắc chắn bạn đã chọn thư mục lưu.");
             }
         } 
     }
 
     private async Task StopRecording() 
     {
-        if (module is not null && !string.IsNullOrEmpty(currentRecordingFileName)) 
+        if (module is not null) 
         { 
             try {
-                // 1. Dừng quay và đợi đẩy nốt chunk cuối lên server
-                await module.InvokeVoidAsync("stopRecordingStream"); 
+                // Tạo tên file trước
+                var fileName = $"VID_{_displayPatientCode ?? "NA"}_{DateTime.Now:yyyyMMdd_HHmmss}.webm";
+
+                // Dừng quay, LƯU FILE và nhận lại URL để hiển thị
+                var url = await module.InvokeAsync<string>("stopRecordingAndSaveLocal", fileName);
                 isRecording = false;
 
-                // 2. Lúc này file đã nằm trọn vẹn trên server tại thư mục /uploads/
-                var serverUrl = $"uploads/{currentRecordingFileName}";
+                if (string.IsNullOrEmpty(url)) 
+                {
+                    ShowError("Không thể lưu video. Hãy chắc chắn bạn đã chọn thư mục lưu ở trang danh sách.");
+                    return;
+                }
 
-                // 3. Hiển thị lên UI
                 var newItem = new MediaItem { 
                     Type = "video", 
-                    Url = serverUrl, // URL trực tiếp từ server
+                    Url = url, 
                     Timestamp = DateTime.Now, 
-                    Filename = currentRecordingFileName,
-                    IsUploaded = true // Video stream xong là coi như đã upload
+                    Filename = fileName,
+                    IsUploaded = true // Đánh dấu là "Đã lưu cục bộ"
                 };
                 
                 capturedItems.Add(newItem);
                 StateHasChanged();
-
-                currentRecordingFileName = null;
             } 
             catch (Exception ex) 
             { 

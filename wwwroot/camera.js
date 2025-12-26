@@ -1,5 +1,10 @@
-﻿let videoStream = null;
-let mediaRecorder = null;
+﻿import { saveFile } from './fileSystemAccess.js';
+
+let videoStream = null;
+let mediaRecorder = null; // For streaming upload
+let localMediaRecorder = null; // For local saving
+let recordedChunks = []; // For local saving
+
 let dotNetHelperRef = null;
 
 // Hàng đợi upload để đảm bảo thứ tự các chunk video (Chunk 1 -> Chunk 2 -> Chunk 3...)
@@ -21,7 +26,7 @@ export function getSavedSettings() {
 function handleKeyboardEvent(event) {
     if (!dotNetHelperRef) return;
     if (event.code === 'Space' && event.target.tagName !== 'INPUT') {
-        event.preventDefault(); 
+        event.preventDefault();
         dotNetHelperRef.invokeMethodAsync('TriggerCapture');
     }
 }
@@ -72,7 +77,7 @@ export async function startCamera(videoElementId, deviceId, width, height, frame
 
 export function stopCamera(videoElementId) {
     if (videoStream) {
-        try { videoStream.getTracks().forEach(track => track.stop()); } catch (e) {}
+        try { videoStream.getTracks().forEach(track => track.stop()); } catch (e) { }
         videoStream = null;
     }
     if (videoElementId) {
@@ -81,6 +86,100 @@ export function stopCamera(videoElementId) {
     }
 }
 
+export async function getVideoDevices() {
+    try {
+        await navigator.mediaDevices.getUserMedia({ video: true }).then(s => s.getTracks().forEach(t => t.stop()));
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        return devices.filter(d => d.kind === 'videoinput').map(d => ({ deviceId: d.deviceId, label: d.label }));
+    } catch (e) { return []; }
+}
+
+
+// --- NEW LOCAL SAVING LOGIC ---
+
+/**
+ * Takes a picture, saves it locally, and returns a blob URL for display.
+ * @param {string} videoElementId The ID of the video element.
+ * @param {string} fileName The desired file name for the saved image.
+ * @returns {Promise<string>} A promise that resolves with the blob URL of the image.
+ */
+export async function takePictureAndSave(videoElementId, fileName) {
+    return new Promise((resolve) => {
+        const video = document.getElementById(videoElementId);
+        if (!video) {
+            resolve(null);
+            return;
+        };
+
+        const canvas = document.createElement("canvas");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        canvas.toBlob(async (blob) => {
+            if (blob) {
+                await saveFile(fileName, blob);
+                resolve(URL.createObjectURL(blob));
+            } else {
+                resolve(null);
+            }
+        }, "image/jpeg", 0.9);
+    });
+}
+
+/**
+ * Starts recording the video for local saving.
+ * @param {string} videoElementId The ID of the video element.
+ */
+export function startRecordingLocal(videoElementId) {
+    const video = document.getElementById(videoElementId);
+    const stream = video ? video.srcObject : videoStream;
+    if (!stream) return false;
+
+    recordedChunks = [];
+    let mimeType = 'video/webm';
+    if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) mimeType = 'video/webm;codecs=vp9';
+    
+    const options = { mimeType };
+    localMediaRecorder = new MediaRecorder(stream, options);
+
+    localMediaRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+            recordedChunks.push(event.data);
+        }
+    };
+
+    localMediaRecorder.start();
+    return true;
+}
+
+/**
+ * Stops local recording, saves the video, and returns a blob URL for display.
+ * @param {string} fileName The desired file name for the saved video.
+ * @returns {Promise<string>} A promise that resolves with the blob URL of the video.
+ */
+export async function stopRecordingAndSaveLocal(fileName) {
+    return new Promise((resolve) => {
+        if (!localMediaRecorder || localMediaRecorder.state === "inactive") {
+            resolve(null);
+            return;
+        }
+
+        localMediaRecorder.onstop = async () => {
+            const completeBlob = new Blob(recordedChunks, { type: localMediaRecorder.mimeType });
+            await saveFile(fileName, completeBlob);
+            recordedChunks = [];
+            resolve(URL.createObjectURL(completeBlob));
+        };
+
+        localMediaRecorder.stop();
+    });
+}
+
+
+// --- OLD UPLOAD LOGIC (Kept for reference or alternative use) ---
+
+// This function now only returns the object URL, the upload is separate.
 export async function takePicture(videoElementId) {
     const video = document.getElementById(videoElementId);
     if (video) {
@@ -97,52 +196,34 @@ export async function takePicture(videoElementId) {
     return null;
 }
 
-export async function getVideoDevices() {
-    try {
-        await navigator.mediaDevices.getUserMedia({ video: true }).then(s => s.getTracks().forEach(t => t.stop()));
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        return devices.filter(d => d.kind === 'videoinput').map(d => ({ deviceId: d.deviceId, label: d.label }));
-    } catch (e) { return []; }
-}
-
-// --- NEW RECORDING LOGIC (STREAMING) ---
-
-// Hàm này giờ nhận thêm fileName và apiUrl để upload ngay lập tức
 export function startRecordingStream(videoElementId, fileName, apiUrl) {
     const video = document.getElementById(videoElementId);
     const stream = video ? video.srcObject : videoStream;
     if (!stream) return false;
     
-    // Reset hàng đợi upload
     uploadQueue = Promise.resolve();
 
     try {
-        // Ưu tiên codec VP9 hoặc H264 để file WebM/MP4 dễ đọc
         let mimeType = 'video/webm';
         if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) mimeType = 'video/webm;codecs=vp9';
-        else if (MediaRecorder.isTypeSupported('video/mp4')) mimeType = 'video/mp4'; // Một số trình duyệt mới hỗ trợ ghi mp4 trực tiếp
+        else if (MediaRecorder.isTypeSupported('video/mp4')) mimeType = 'video/mp4';
 
         const options = { mimeType: mimeType, videoBitsPerSecond: 2500000 };
         mediaRecorder = new MediaRecorder(stream, options);
 
-        // Sự kiện này sẽ bắn ra liên tục mỗi N giây (do ta set timeSlice ở hàm start)
         mediaRecorder.ondataavailable = (event) => {
             if (event.data && event.data.size > 0) {
-                // Thêm việc upload vào hàng đợi (Queue)
-                // Chunk sau phải đợi chunk trước upload xong mới được chạy
                 uploadQueue = uploadQueue.then(async () => {
                     try {
                         await uploadChunkCore(event.data, fileName, apiUrl);
                     } catch (err) {
                         console.error("Lỗi upload chunk video:", err);
-                        // Có thể thêm logic retry ở đây nếu muốn
                     }
                 });
             }
         };
-
-        // Bắt đầu ghi và cắt chunk mỗi 1000ms (1 giây)
-        mediaRecorder.start(1000); 
+        
+        mediaRecorder.start(1000);
         console.log("Started recording stream to:", fileName);
         return true;
     } catch (err) {
@@ -159,7 +240,6 @@ export async function stopRecordingStream() {
         }
         
         mediaRecorder.onstop = async () => {
-            // Đợi tất cả các chunk còn lại trong hàng đợi upload xong
             await uploadQueue;
             console.log("Recording stopped and all chunks uploaded.");
             resolve(true);
@@ -169,12 +249,10 @@ export async function stopRecordingStream() {
     });
 }
 
-// Hàm core upload (Helper)
 async function uploadChunkCore(blob, fileName, apiUrl) {
     const formData = new FormData();
     formData.append("chunk", blob);
     
-    // Gọi API C#
     const res = await fetch(`${apiUrl}/${fileName}`, {
         method: "POST",
         body: formData
@@ -183,7 +261,6 @@ async function uploadChunkCore(blob, fileName, apiUrl) {
     if (!res.ok) throw new Error("Server rejected chunk");
 }
 
-// Giữ lại hàm upload ảnh cũ (cho tính năng chụp ảnh)
 export async function uploadMedia(fileUrl, fileName, apiUrl) {
     try {
         const response = await fetch(fileUrl);
